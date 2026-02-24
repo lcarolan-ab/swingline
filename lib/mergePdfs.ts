@@ -1,4 +1,5 @@
 import { PDFDocument, PDFFont, PDFPage, rgb, StandardFonts } from "pdf-lib";
+import type { FrpPageInfo } from "@/lib/extractFrpSections";
 
 export interface Section {
   file: File;
@@ -8,6 +9,12 @@ export interface Section {
 export interface BookMetadata {
   clientName: string;
   periodDate: string; // e.g. "December 31, 2025"
+}
+
+interface TocEntry {
+  reportTitle: string;
+  portfolioName: string;
+  page: number;
 }
 
 // ─── colours (matched to the ArchBridge TOC example) ───────────────────────
@@ -34,11 +41,16 @@ const COL_PAGE_R    = PAGE_W - MARGIN; // right-edge for right-aligned page numb
  *   Page 2   — generated Table of Contents
  *   Pages 3… — all sections in display order; the cover section contributes
  *               only its pages 2… (page 1 was used as the cover above)
+ *
+ * When `frpPageInfo` is supplied the cover section's TOC row expands into one
+ * row per content page, each showing the extracted report title and portfolio
+ * name from that page's header.
  */
 export async function buildPerformanceBook(
   sections: Section[],
   coverIndex: number,
   metadata: BookMetadata,
+  frpPageInfo?: FrpPageInfo[],
 ): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
 
@@ -51,18 +63,35 @@ export async function buildPerformanceBook(
     sections.map(async (s) => PDFDocument.load(await s.file.arrayBuffer())),
   );
 
-  // ── calculate TOC page numbers (sections in display order) ─────────────────
+  // ── calculate TOC entries (sections in display order) ─────────────────────
   // Page 1 = cover, Page 2 = TOC, Page 3+ = section content in display order.
   // The cover section contributes (N-1) content pages; all others contribute N.
-  const tocEntries: { name: string; page: number }[] = [];
+  const tocEntries: TocEntry[] = [];
   let curPage = 3;
+
   for (let i = 0; i < sections.length; i++) {
-    tocEntries.push({ name: sections[i].name, page: curPage });
-    const contentPages =
-      i === coverIndex
-        ? Math.max(0, pdfs[i].getPageCount() - 1) // page 1 extracted as cover
-        : pdfs[i].getPageCount();
-    curPage += contentPages;
+    if (i === coverIndex && frpPageInfo && frpPageInfo.length > 0) {
+      // Expand into one row per FRP content page using the extracted headers.
+      for (const info of frpPageInfo) {
+        tocEntries.push({
+          reportTitle:   info.reportTitle,
+          portfolioName: info.portfolioName,
+          page:          curPage,
+        });
+        curPage++;
+      }
+    } else {
+      const contentPages =
+        i === coverIndex
+          ? Math.max(0, pdfs[i].getPageCount() - 1) // page 1 extracted as cover
+          : pdfs[i].getPageCount();
+      tocEntries.push({
+        reportTitle:   sections[i].name,
+        portfolioName: metadata.clientName,
+        page:          curPage,
+      });
+      curPage += contentPages;
+    }
   }
 
   // ── assemble the document ─────────────────────────────────────────────────
@@ -87,14 +116,15 @@ export async function buildPerformanceBook(
     }
   }
 
-  // 5. Stamp page numbers (bottom-right of every page)
+  // 4. Stamp page numbers bottom-right, starting at page 3 (index 2).
+  //    Cover (index 0) and TOC (index 1) intentionally receive no number.
   const totalPages = doc.getPageCount();
   const GRAY = rgb(0.55, 0.55, 0.55);
-  for (let i = 0; i < totalPages; i++) {
-    const pg   = doc.getPage(i);
+  for (let i = 2; i < totalPages; i++) {
+    const pg      = doc.getPage(i);
     const { width } = pg.getSize();
-    const numStr = String(i + 1);
-    const numW   = fontRegular.widthOfTextAtSize(numStr, 9);
+    const numStr  = String(i + 1);          // page 3, 4, 5 …
+    const numW    = fontRegular.widthOfTextAtSize(numStr, 9);
     pg.drawText(numStr, {
       x: width - MARGIN - numW,
       y: 18,
@@ -111,7 +141,7 @@ export async function buildPerformanceBook(
 async function buildTocPage(
   doc: PDFDocument,
   metadata: BookMetadata,
-  entries: { name: string; page: number }[],
+  entries: TocEntry[],
   fontBold: PDFFont,
   fontRegular: PDFFont,
   fontOblique: PDFFont,
@@ -161,10 +191,10 @@ async function buildTocPage(
   const MAX_PORTFOLIO_W = COL_PAGE_R    - COL_PORTFOLIO - 40; // 40pt buffer before page number
 
   // data rows
-  entries.forEach(({ name, page: startPage }, i) => {
+  entries.forEach(({ reportTitle, portfolioName, page: startPage }, i) => {
     const rowY = tableTop - 48 - i * 22;
-    const reportText    = truncateText(name,                fontRegular, 10, MAX_REPORT_W);
-    const portfolioText = truncateText(metadata.clientName, fontRegular, 10, MAX_PORTFOLIO_W);
+    const reportText    = truncateText(reportTitle,   fontRegular, 10, MAX_REPORT_W);
+    const portfolioText = truncateText(portfolioName, fontRegular, 10, MAX_PORTFOLIO_W);
 
     page.drawText(String(i + 1), { x: COL_SECTION,   y: rowY, size: 10, font: fontRegular, color: LIGHT_BLUE });
     page.drawText(reportText,    { x: COL_REPORT,     y: rowY, size: 10, font: fontRegular, color: LIGHT_BLUE });
@@ -177,7 +207,6 @@ async function buildTocPage(
   });
 
   // ── logo placeholder (bottom-left) ────────────────────────────────────────
-  // Three stacked wave arcs, drawn as bezier paths
   drawWaveMark(page, MARGIN, 30, BLUE);
   page.drawText("ArchBridge Family Office", {
     x: MARGIN + 28, y: 32,
@@ -202,7 +231,6 @@ function truncateText(text: string, font: PDFFont, size: number, maxWidth: numbe
  * Each arc bows upward; arcs are stacked and shrink toward the top.
  */
 function drawWaveMark(page: PDFPage, x: number, y: number, color: ReturnType<typeof rgb>) {
-  // arc params: [startX offset, width, peakHeight]
   const arcs: [number, number, number][] = [
     [0,   20, 6],  // bottom — widest
     [2,   16, 5],  // middle
@@ -212,7 +240,6 @@ function drawWaveMark(page: PDFPage, x: number, y: number, color: ReturnType<typ
   arcs.forEach(([ox, w, h], i) => {
     const sy = y + i * 6;
     const sx = x + ox;
-    // approximate arc with a cubic bezier that bows upward
     const path =
       `M ${sx} ${sy} ` +
       `C ${sx + w * 0.25} ${sy + h}, ${sx + w * 0.75} ${sy + h}, ${sx + w} ${sy}`;

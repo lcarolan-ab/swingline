@@ -17,6 +17,7 @@ import {
   rectSortingStrategy,
 } from "@dnd-kit/sortable";
 import { buildPerformanceBook } from "@/lib/mergePdfs";
+import { extractFrpPageInfo } from "@/lib/extractFrpSections";
 import PdfCard from "@/components/PdfCard";
 
 export interface PdfFile {
@@ -123,10 +124,15 @@ export default function PdfMerger() {
     setIsBuilding(true);
     setError(null);
     try {
+      // Extract per-page header info from the FRP (cover) PDF so the TOC can
+      // list individual subsections with their report title and entity name.
+      const frpPageInfo = await extractFrpPageInfo(pdfFiles[coverIndex].file);
+
       const bytes = await buildPerformanceBook(
         pdfFiles.map((f) => ({ file: f.file, name: f.sectionName })),
         coverIndex,
         { clientName: clientName.trim(), periodDate: formatPeriodDate(periodDateRaw) },
+        frpPageInfo,
       );
       const buf  = new ArrayBuffer(bytes.byteLength);
       new Uint8Array(buf).set(bytes);
