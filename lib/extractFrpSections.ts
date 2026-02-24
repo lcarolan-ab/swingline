@@ -55,12 +55,15 @@ export async function extractFrpPageInfo(file: File): Promise<FrpPageInfo[]> {
       (x < midX ? leftItems : rightItems).push({ str: item.str.trim(), y });
     }
 
-    // Right side: join all text top-to-bottom for the report title.
-    const reportTitle = rightItems
-      .sort((a, b) => b.y - a.y)
-      .map((i) => i.str)
-      .join(" ")
-      .trim() || "—";
+    // Right side: join all text top-to-bottom for the report title,
+    // then strip any trailing date (e.g. "Portfolio Summary December 31, 2025").
+    const reportTitle = stripTrailingDate(
+      rightItems
+        .sort((a, b) => b.y - a.y)
+        .map((i) => i.str)
+        .join(" ")
+        .trim(),
+    ) || "—";
 
     // Left side: group into visual lines (items within 3 pt share a line).
     const leftSorted = leftItems.sort((a, b) => b.y - a.y);
@@ -83,4 +86,17 @@ export async function extractFrpPageInfo(file: File): Promise<FrpPageInfo[]> {
   }
 
   return results;
+}
+
+/**
+ * Removes a trailing month-day-year date from a string.
+ * e.g. "Portfolio Summary December 31, 2025" → "Portfolio Summary"
+ */
+function stripTrailingDate(text: string): string {
+  return text
+    .replace(
+      /\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s*\d{4}.*/i,
+      "",
+    )
+    .trim();
 }

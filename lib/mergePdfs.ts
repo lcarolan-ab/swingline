@@ -71,13 +71,20 @@ export async function buildPerformanceBook(
 
   for (let i = 0; i < sections.length; i++) {
     if (i === coverIndex && frpPageInfo && frpPageInfo.length > 0) {
-      // Expand into one row per FRP content page using the extracted headers.
+      // One TOC row per unique (reportTitle, portfolioName) run; the page
+      // number points to the first page where that combination appears.
+      // curPage still advances for every physical page regardless.
+      let lastKey = "";
       for (const info of frpPageInfo) {
-        tocEntries.push({
-          reportTitle:   info.reportTitle,
-          portfolioName: info.portfolioName,
-          page:          curPage,
-        });
+        const key = `${info.reportTitle}|${info.portfolioName}`;
+        if (key !== lastKey) {
+          tocEntries.push({
+            reportTitle:   info.reportTitle,
+            portfolioName: info.portfolioName,
+            page:          curPage,
+          });
+          lastKey = key;
+        }
         curPage++;
       }
     } else {
@@ -192,7 +199,7 @@ async function buildTocPage(
 
   // data rows
   entries.forEach(({ reportTitle, portfolioName, page: startPage }, i) => {
-    const rowY = tableTop - 48 - i * 22;
+    const rowY = tableTop - 40 - i * 14;
     const reportText    = truncateText(reportTitle,   fontRegular, 10, MAX_REPORT_W);
     const portfolioText = truncateText(portfolioName, fontRegular, 10, MAX_PORTFOLIO_W);
 
