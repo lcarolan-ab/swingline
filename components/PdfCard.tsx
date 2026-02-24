@@ -33,10 +33,10 @@ export default function PdfCard({ pdf, index, onRemove }: Props) {
     <div
       ref={setNodeRef}
       style={style}
-      className={`group relative flex flex-col rounded-xl border bg-white aspect-[3/4] overflow-hidden select-none transition-shadow ${
+      className={`group relative flex flex-col rounded-xl border bg-white aspect-[3/4] overflow-hidden select-none transition-all ${
         isDragging
-          ? "shadow-2xl border-blue-300 opacity-75"
-          : "border-gray-200 shadow-sm hover:shadow-md"
+          ? "shadow-2xl border-blue-400 opacity-75 ring-2 ring-blue-300"
+          : "border-gray-200 shadow-sm hover:border-blue-200 hover:shadow-md hover:shadow-blue-100/60"
       }`}
     >
       {/* Position badge */}

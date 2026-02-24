@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+html,
 body {
+  background-color: #172554; /* blue-950 */
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
