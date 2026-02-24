@@ -88,6 +88,23 @@ export async function buildPerformanceBook(
     for (const p of await doc.copyPages(pdf, pdf.getPageIndices())) doc.addPage(p);
   }
 
+  // 5. Stamp page numbers (bottom-right of every page)
+  const totalPages = doc.getPageCount();
+  const GRAY = rgb(0.55, 0.55, 0.55);
+  for (let i = 0; i < totalPages; i++) {
+    const pg   = doc.getPage(i);
+    const { width } = pg.getSize();
+    const numStr = String(i + 1);
+    const numW   = fontRegular.widthOfTextAtSize(numStr, 9);
+    pg.drawText(numStr, {
+      x: width - MARGIN - numW,
+      y: 18,
+      size: 9,
+      font: fontRegular,
+      color: GRAY,
+    });
+  }
+
   return doc.save();
 }
 
@@ -140,16 +157,23 @@ async function buildTocPage(
     thickness: 0.5, color: LIGHT_BLUE,
   });
 
+  // column max-widths (leave 8pt gutter before the next column)
+  const MAX_REPORT_W    = COL_PORTFOLIO - COL_REPORT    - 8;
+  const MAX_PORTFOLIO_W = COL_PAGE_R    - COL_PORTFOLIO - 40; // 40pt buffer before page number
+
   // data rows
   entries.forEach(({ name, page: startPage }, i) => {
     const rowY = tableTop - 48 - i * 22;
-    page.drawText(String(i + 1), { x: COL_SECTION,  y: rowY, size: 10, font: fontRegular, color: LIGHT_BLUE });
-    page.drawText(name,          { x: COL_REPORT,    y: rowY, size: 10, font: fontRegular, color: LIGHT_BLUE });
-    page.drawText(metadata.clientName, { x: COL_PORTFOLIO, y: rowY, size: 10, font: fontRegular, color: LIGHT_BLUE });
+    const reportText    = truncateText(name,                fontRegular, 10, MAX_REPORT_W);
+    const portfolioText = truncateText(metadata.clientName, fontRegular, 10, MAX_PORTFOLIO_W);
+
+    page.drawText(String(i + 1), { x: COL_SECTION,   y: rowY, size: 10, font: fontRegular, color: LIGHT_BLUE });
+    page.drawText(reportText,    { x: COL_REPORT,     y: rowY, size: 10, font: fontRegular, color: LIGHT_BLUE });
+    page.drawText(portfolioText, { x: COL_PORTFOLIO,  y: rowY, size: 10, font: fontRegular, color: LIGHT_BLUE });
 
     // right-align page number
     const numStr = String(startPage);
-    const numW = fontRegular.widthOfTextAtSize(numStr, 10);
+    const numW   = fontRegular.widthOfTextAtSize(numStr, 10);
     page.drawText(numStr, { x: COL_PAGE_R - numW, y: rowY, size: 10, font: fontRegular, color: LIGHT_BLUE });
   });
 
@@ -162,6 +186,16 @@ async function buildTocPage(
   });
 
   return page;
+}
+
+/** Truncates text with an ellipsis so it fits within maxWidth pts at the given size. */
+function truncateText(text: string, font: PDFFont, size: number, maxWidth: number): string {
+  if (font.widthOfTextAtSize(text, size) <= maxWidth) return text;
+  let t = text;
+  while (t.length > 0 && font.widthOfTextAtSize(t + "…", size) > maxWidth) {
+    t = t.slice(0, -1);
+  }
+  return t + "…";
 }
 
 /**

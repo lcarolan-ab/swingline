@@ -28,8 +28,8 @@ export interface PdfFile {
 export default function PdfMerger() {
   const [pdfFiles, setPdfFiles]       = useState<PdfFile[]>([]);
   const [coverId, setCoverId]         = useState<string | null>(null);
-  const [clientName, setClientName]   = useState("");
-  const [periodDate, setPeriodDate]   = useState("");
+  const [clientName, setClientName]     = useState("");
+  const [periodDateRaw, setPeriodDateRaw] = useState(""); // YYYY-MM-DD from <input type="date">
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [isBuilding, setIsBuilding]   = useState(false);
   const [error, setError]             = useState<string | null>(null);
@@ -101,13 +101,22 @@ export default function PdfMerger() {
 
   const handleSetCover = (id: string) => setCoverId(id);
 
+  /** Converts "YYYY-MM-DD" → "December 31, 2025" */
+  const formatPeriodDate = (raw: string): string => {
+    if (!raw) return "";
+    const [y, m, d] = raw.split("-").map(Number);
+    return new Date(y, m - 1, d).toLocaleDateString("en-US", {
+      month: "long", day: "numeric", year: "numeric",
+    });
+  };
+
   const handleClear = () => { setPdfFiles([]); setCoverId(null); setError(null); };
 
   // ── build ──────────────────────────────────────────────────────────────────
   const handleBuild = async () => {
     if (!coverId) { setError("Designate one PDF as the cover (FRP) source."); return; }
     if (!clientName.trim()) { setError("Enter a client name."); return; }
-    if (!periodDate.trim()) { setError("Enter a period ending date."); return; }
+    if (!periodDateRaw)     { setError("Enter a period ending date."); return; }
 
     const coverFile  = pdfFiles.find((f) => f.id === coverId)!;
     const otherFiles = pdfFiles.filter((f) => f.id !== coverId);
@@ -118,7 +127,7 @@ export default function PdfMerger() {
       const bytes = await buildPerformanceBook(
         { file: coverFile.file, name: coverFile.sectionName },
         otherFiles.map((f) => ({ file: f.file, name: f.sectionName })),
-        { clientName: clientName.trim(), periodDate: periodDate.trim() },
+        { clientName: clientName.trim(), periodDate: formatPeriodDate(periodDateRaw) },
       );
       const buf  = new ArrayBuffer(bytes.byteLength);
       new Uint8Array(buf).set(bytes);
@@ -138,7 +147,7 @@ export default function PdfMerger() {
   };
 
   const hasFiles   = pdfFiles.length > 0;
-  const canBuild   = hasFiles && !!coverId && !!clientName.trim() && !!periodDate.trim();
+  const canBuild   = hasFiles && !!coverId && !!clientName.trim() && !!periodDateRaw;
 
   return (
     <div
@@ -169,11 +178,10 @@ export default function PdfMerger() {
         <div className="flex flex-col gap-1">
           <label className="text-xs font-medium text-stone-500 uppercase tracking-wide">Period Ending</label>
           <input
-            type="text"
-            value={periodDate}
-            onChange={(e) => setPeriodDate(e.target.value)}
-            placeholder="e.g. December 31, 2025"
-            className="px-3 py-2 rounded-lg border border-stone-200 text-sm text-stone-800 placeholder-stone-300 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:border-blue-400"
+            type="date"
+            value={periodDateRaw}
+            onChange={(e) => setPeriodDateRaw(e.target.value)}
+            className="px-3 py-2 rounded-lg border border-stone-200 text-sm text-stone-800 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:border-blue-400"
           />
         </div>
       </div>
