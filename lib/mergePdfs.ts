@@ -30,14 +30,14 @@ const COL_PAGE_R    = PAGE_W - MARGIN; // right-edge for right-aligned page numb
  * Build the performance book.
  *
  * Structure of the output:
- *   Page 1            — cover page (page 1 of the coverSection PDF)
- *   Page 2            — generated Table of Contents
- *   Pages 3 … N+1    — remaining pages of the coverSection PDF (pages 2…N)
- *   Pages N+2 …      — all pages of each otherSection, in order
+ *   Page 1   — cover page  (page 1 of the section at coverIndex)
+ *   Page 2   — generated Table of Contents
+ *   Pages 3… — all sections in display order; the cover section contributes
+ *               only its pages 2… (page 1 was used as the cover above)
  */
 export async function buildPerformanceBook(
-  coverSection: Section,
-  otherSections: Section[],
+  sections: Section[],
+  coverIndex: number,
   metadata: BookMetadata,
 ): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
@@ -47,45 +47,44 @@ export async function buildPerformanceBook(
   const fontOblique = await doc.embedFont(StandardFonts.HelveticaOblique);
 
   // ── load all PDFs ──────────────────────────────────────────────────────────
-  const coverPdf  = await PDFDocument.load(await coverSection.file.arrayBuffer());
-  const coverN    = coverPdf.getPageCount();
+  const pdfs = await Promise.all(
+    sections.map(async (s) => PDFDocument.load(await s.file.arrayBuffer())),
+  );
 
-  const otherPdfs: PDFDocument[] = [];
-  for (const s of otherSections) {
-    otherPdfs.push(await PDFDocument.load(await s.file.arrayBuffer()));
-  }
-
-  // ── calculate TOC page numbers ─────────────────────────────────────────────
-  // Page 1  = cover  (page 1 of FRP)
-  // Page 2  = TOC
-  // Page 3… = FRP pages 2…N  (coverN-1 pages)
-  // then each other section follows
+  // ── calculate TOC page numbers (sections in display order) ─────────────────
+  // Page 1 = cover, Page 2 = TOC, Page 3+ = section content in display order.
+  // The cover section contributes (N-1) content pages; all others contribute N.
   const tocEntries: { name: string; page: number }[] = [];
-  tocEntries.push({ name: coverSection.name, page: 3 });
-
-  let nextPage = 3 + (coverN - 1); // first page after the FRP content
-  for (let i = 0; i < otherSections.length; i++) {
-    tocEntries.push({ name: otherSections[i].name, page: nextPage });
-    nextPage += otherPdfs[i].getPageCount();
+  let curPage = 3;
+  for (let i = 0; i < sections.length; i++) {
+    tocEntries.push({ name: sections[i].name, page: curPage });
+    const contentPages =
+      i === coverIndex
+        ? Math.max(0, pdfs[i].getPageCount() - 1) // page 1 extracted as cover
+        : pdfs[i].getPageCount();
+    curPage += contentPages;
   }
 
   // ── assemble the document ─────────────────────────────────────────────────
-  // 1. Cover page
-  const [coverPage] = await doc.copyPages(coverPdf, [0]);
+  // 1. Cover page (page 1 of the designated cover PDF)
+  const [coverPage] = await doc.copyPages(pdfs[coverIndex], [0]);
   doc.addPage(coverPage);
 
   // 2. TOC page
   await buildTocPage(doc, metadata, tocEntries, fontBold, fontRegular, fontOblique);
 
-  // 3. Remaining FRP pages
-  if (coverN > 1) {
-    const indices = Array.from({ length: coverN - 1 }, (_, i) => i + 1);
-    for (const p of await doc.copyPages(coverPdf, indices)) doc.addPage(p);
-  }
-
-  // 4. Other sections
-  for (const pdf of otherPdfs) {
-    for (const p of await doc.copyPages(pdf, pdf.getPageIndices())) doc.addPage(p);
+  // 3. Section content in display order
+  for (let i = 0; i < sections.length; i++) {
+    const pdf = pdfs[i];
+    if (i === coverIndex) {
+      // Skip page 1 — it's already the cover
+      if (pdf.getPageCount() > 1) {
+        const indices = Array.from({ length: pdf.getPageCount() - 1 }, (_, j) => j + 1);
+        for (const p of await doc.copyPages(pdf, indices)) doc.addPage(p);
+      }
+    } else {
+      for (const p of await doc.copyPages(pdf, pdf.getPageIndices())) doc.addPage(p);
+    }
   }
 
   // 5. Stamp page numbers (bottom-right of every page)

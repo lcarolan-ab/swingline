@@ -118,15 +118,14 @@ export default function PdfMerger() {
     if (!clientName.trim()) { setError("Enter a client name."); return; }
     if (!periodDateRaw)     { setError("Enter a period ending date."); return; }
 
-    const coverFile  = pdfFiles.find((f) => f.id === coverId)!;
-    const otherFiles = pdfFiles.filter((f) => f.id !== coverId);
+    const coverIndex = pdfFiles.findIndex((f) => f.id === coverId);
 
     setIsBuilding(true);
     setError(null);
     try {
       const bytes = await buildPerformanceBook(
-        { file: coverFile.file, name: coverFile.sectionName },
-        otherFiles.map((f) => ({ file: f.file, name: f.sectionName })),
+        pdfFiles.map((f) => ({ file: f.file, name: f.sectionName })),
+        coverIndex,
         { clientName: clientName.trim(), periodDate: formatPeriodDate(periodDateRaw) },
       );
       const buf  = new ArrayBuffer(bytes.byteLength);
