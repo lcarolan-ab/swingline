@@ -139,7 +139,7 @@ export default function PdfMerger() {
         <div className="flex items-center gap-3">
           <button
             onClick={() => fileInputRef.current?.click()}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-50 border border-blue-200 text-sm font-medium text-blue-700 hover:bg-blue-100 hover:border-blue-300 transition-colors"
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white border border-stone-200 text-sm font-medium text-stone-700 hover:bg-stone-50 hover:border-stone-300 transition-colors"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -148,7 +148,7 @@ export default function PdfMerger() {
           </button>
 
           {hasFiles && (
-            <span className="text-sm text-blue-400 font-medium">
+            <span className="text-sm text-stone-400">
               {pdfFiles.length} file{pdfFiles.length !== 1 ? "s" : ""}
             </span>
           )}
@@ -158,7 +158,7 @@ export default function PdfMerger() {
           {hasFiles && (
             <button
               onClick={() => setPdfFiles([])}
-              className="px-3 py-2 rounded-lg text-sm text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+              className="px-3 py-2 rounded-lg text-sm text-stone-400 hover:text-red-500 hover:bg-red-50 transition-colors"
             >
               Clear all
             </button>
@@ -166,7 +166,7 @@ export default function PdfMerger() {
           <button
             onClick={handleMerge}
             disabled={pdfFiles.length < 2 || isMerging}
-            className="flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed transition-colors shadow-sm"
+            className="flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-stone-200 disabled:text-stone-400 disabled:cursor-not-allowed transition-colors"
           >
             {isMerging ? (
               <>
@@ -207,17 +207,17 @@ export default function PdfMerger() {
       {/* Empty state */}
       {!hasFiles && (
         <div
-          className="flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-blue-100 bg-blue-50/40 py-24 text-center cursor-pointer hover:border-blue-300 hover:bg-blue-50 transition-colors"
+          className="flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-stone-200 bg-stone-50/60 py-24 text-center cursor-pointer hover:border-stone-300 hover:bg-stone-50 transition-colors"
           onClick={() => fileInputRef.current?.click()}
         >
-          <div className="w-14 h-14 rounded-2xl bg-blue-100 flex items-center justify-center">
-            <svg className="w-7 h-7 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="w-14 h-14 rounded-2xl bg-stone-100 flex items-center justify-center">
+            <svg className="w-7 h-7 text-stone-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
           </div>
           <div>
-            <p className="text-sm font-medium text-gray-700">Drop PDFs here or click to browse</p>
-            <p className="text-xs text-blue-400 mt-1">Add as many as you need, then reorder and merge</p>
+            <p className="text-sm font-medium text-stone-700">Drop PDFs here or click to browse</p>
+            <p className="text-xs text-stone-400 mt-1">Add as many as you need, then reorder and merge</p>
           </div>
         </div>
       )}
@@ -243,7 +243,7 @@ export default function PdfMerger() {
               {/* Add more card */}
               <button
                 onClick={() => fileInputRef.current?.click()}
-                className="flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-gray-200 bg-white aspect-[3/4] text-gray-400 hover:border-blue-300 hover:text-blue-500 hover:bg-blue-50 transition-colors"
+                className="flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-stone-200 aspect-[3/4] text-stone-400 hover:border-blue-300 hover:text-blue-500 hover:bg-blue-50/40 transition-colors"
               >
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />

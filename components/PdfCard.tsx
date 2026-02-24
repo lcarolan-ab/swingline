@@ -36,7 +36,7 @@ export default function PdfCard({ pdf, index, onRemove }: Props) {
       className={`group relative flex flex-col rounded-xl border bg-white aspect-[3/4] overflow-hidden select-none transition-all ${
         isDragging
           ? "shadow-2xl border-blue-400 opacity-75 ring-2 ring-blue-300"
-          : "border-gray-200 shadow-sm hover:border-blue-200 hover:shadow-md hover:shadow-blue-100/60"
+          : "border-stone-200 shadow-sm hover:border-stone-300 hover:shadow-md"
       }`}
     >
       {/* Position badge */}
@@ -47,7 +47,7 @@ export default function PdfCard({ pdf, index, onRemove }: Props) {
       {/* Remove button */}
       <button
         onClick={() => onRemove(pdf.id)}
-        className="absolute top-2 right-2 z-10 w-6 h-6 rounded-full bg-white border border-gray-200 text-gray-400 hover:text-red-500 hover:border-red-300 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
+        className="absolute top-2 right-2 z-10 w-6 h-6 rounded-full bg-white border border-stone-200 text-stone-400 hover:text-red-500 hover:border-red-200 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
         aria-label="Remove"
       >
         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -67,12 +67,12 @@ export default function PdfCard({ pdf, index, onRemove }: Props) {
       {/* File info footer */}
       <div className="px-3 pb-3 pt-1">
         <p
-          className="text-xs font-medium text-gray-800 truncate leading-tight"
+          className="text-xs font-medium text-stone-800 truncate leading-tight"
           title={pdf.file.name}
         >
           {nameWithoutExt}
         </p>
-        <p className="text-[11px] text-gray-400 mt-0.5">{sizeLabel}</p>
+        <p className="text-[11px] text-stone-400 mt-0.5">{sizeLabel}</p>
       </div>
     </div>
   );
