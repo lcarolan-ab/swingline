@@ -1,16 +1,188 @@
-import { PDFDocument } from "pdf-lib";
+import { PDFDocument, PDFFont, PDFPage, rgb, StandardFonts } from "pdf-lib";
 
-export async function mergePdfs(files: File[]): Promise<Uint8Array> {
-  const merged = await PDFDocument.create();
+export interface Section {
+  file: File;
+  name: string;
+}
 
-  for (const file of files) {
-    const arrayBuffer = await file.arrayBuffer();
-    const pdf = await PDFDocument.load(arrayBuffer);
-    const pages = await merged.copyPages(pdf, pdf.getPageIndices());
-    for (const page of pages) {
-      merged.addPage(page);
-    }
+export interface BookMetadata {
+  clientName: string;
+  periodDate: string; // e.g. "December 31, 2025"
+}
+
+// ─── colours (matched to the ArchBridge TOC example) ───────────────────────
+const BLUE       = rgb(0.106, 0.431, 0.761);  // #1B6EC2 — titles / headers
+const LIGHT_BLUE = rgb(0.357, 0.608, 0.835);  // #5B9BD5 — data rows
+const BLACK      = rgb(0,     0,     0);
+
+// ─── page dimensions (landscape letter, same as the source PDFs) ────────────
+const PAGE_W = 792;
+const PAGE_H = 612;
+const MARGIN = 54;
+
+// ─── column x-positions for the TOC table ───────────────────────────────────
+const COL_SECTION   = MARGIN;
+const COL_REPORT    = MARGIN + 90;
+const COL_PORTFOLIO = MARGIN + 340;
+const COL_PAGE_R    = PAGE_W - MARGIN; // right-edge for right-aligned page numbers
+
+/**
+ * Build the performance book.
+ *
+ * Structure of the output:
+ *   Page 1            — cover page (page 1 of the coverSection PDF)
+ *   Page 2            — generated Table of Contents
+ *   Pages 3 … N+1    — remaining pages of the coverSection PDF (pages 2…N)
+ *   Pages N+2 …      — all pages of each otherSection, in order
+ */
+export async function buildPerformanceBook(
+  coverSection: Section,
+  otherSections: Section[],
+  metadata: BookMetadata,
+): Promise<Uint8Array> {
+  const doc = await PDFDocument.create();
+
+  const fontBold    = await doc.embedFont(StandardFonts.HelveticaBold);
+  const fontRegular = await doc.embedFont(StandardFonts.Helvetica);
+  const fontOblique = await doc.embedFont(StandardFonts.HelveticaOblique);
+
+  // ── load all PDFs ──────────────────────────────────────────────────────────
+  const coverPdf  = await PDFDocument.load(await coverSection.file.arrayBuffer());
+  const coverN    = coverPdf.getPageCount();
+
+  const otherPdfs: PDFDocument[] = [];
+  for (const s of otherSections) {
+    otherPdfs.push(await PDFDocument.load(await s.file.arrayBuffer()));
   }
 
-  return merged.save();
+  // ── calculate TOC page numbers ─────────────────────────────────────────────
+  // Page 1  = cover  (page 1 of FRP)
+  // Page 2  = TOC
+  // Page 3… = FRP pages 2…N  (coverN-1 pages)
+  // then each other section follows
+  const tocEntries: { name: string; page: number }[] = [];
+  tocEntries.push({ name: coverSection.name, page: 3 });
+
+  let nextPage = 3 + (coverN - 1); // first page after the FRP content
+  for (let i = 0; i < otherSections.length; i++) {
+    tocEntries.push({ name: otherSections[i].name, page: nextPage });
+    nextPage += otherPdfs[i].getPageCount();
+  }
+
+  // ── assemble the document ─────────────────────────────────────────────────
+  // 1. Cover page
+  const [coverPage] = await doc.copyPages(coverPdf, [0]);
+  doc.addPage(coverPage);
+
+  // 2. TOC page
+  await buildTocPage(doc, metadata, tocEntries, fontBold, fontRegular, fontOblique);
+
+  // 3. Remaining FRP pages
+  if (coverN > 1) {
+    const indices = Array.from({ length: coverN - 1 }, (_, i) => i + 1);
+    for (const p of await doc.copyPages(coverPdf, indices)) doc.addPage(p);
+  }
+
+  // 4. Other sections
+  for (const pdf of otherPdfs) {
+    for (const p of await doc.copyPages(pdf, pdf.getPageIndices())) doc.addPage(p);
+  }
+
+  return doc.save();
+}
+
+// ─── TOC page builder ─────────────────────────────────────────────────────────
+async function buildTocPage(
+  doc: PDFDocument,
+  metadata: BookMetadata,
+  entries: { name: string; page: number }[],
+  fontBold: PDFFont,
+  fontRegular: PDFFont,
+  fontOblique: PDFFont,
+): Promise<PDFPage> {
+  const page = doc.addPage([PAGE_W, PAGE_H]);
+
+  // ── title ──────────────────────────────────────────────────────────────────
+  page.drawText("Table of Contents", {
+    x: MARGIN, y: PAGE_H - 70,
+    size: 26, font: fontBold, color: BLUE,
+  });
+
+  // ── date ──────────────────────────────────────────────────────────────────
+  page.drawText(metadata.periodDate, {
+    x: MARGIN, y: PAGE_H - 98,
+    size: 13, font: fontOblique, color: BLUE,
+  });
+
+  // ── table ─────────────────────────────────────────────────────────────────
+  const tableTop = PAGE_H - 148;
+
+  // thick rule above headers
+  page.drawLine({
+    start: { x: MARGIN, y: tableTop },
+    end:   { x: PAGE_W - MARGIN, y: tableTop },
+    thickness: 1.5, color: BLACK,
+  });
+
+  // column headers
+  const headerY = tableTop - 18;
+  page.drawText("Section",   { x: COL_SECTION,   y: headerY, size: 11, font: fontBold, color: BLUE });
+  page.drawText("Report",    { x: COL_REPORT,     y: headerY, size: 11, font: fontBold, color: BLUE });
+  page.drawText("Portfolio", { x: COL_PORTFOLIO,  y: headerY, size: 11, font: fontBold, color: BLUE });
+  // right-align "Page" header
+  const pageHeaderW = fontBold.widthOfTextAtSize("Page", 11);
+  page.drawText("Page", { x: COL_PAGE_R - pageHeaderW, y: headerY, size: 11, font: fontBold, color: BLUE });
+
+  // thin rule below headers
+  page.drawLine({
+    start: { x: MARGIN, y: tableTop - 28 },
+    end:   { x: PAGE_W - MARGIN, y: tableTop - 28 },
+    thickness: 0.5, color: LIGHT_BLUE,
+  });
+
+  // data rows
+  entries.forEach(({ name, page: startPage }, i) => {
+    const rowY = tableTop - 48 - i * 22;
+    page.drawText(String(i + 1), { x: COL_SECTION,  y: rowY, size: 10, font: fontRegular, color: LIGHT_BLUE });
+    page.drawText(name,          { x: COL_REPORT,    y: rowY, size: 10, font: fontRegular, color: LIGHT_BLUE });
+    page.drawText(metadata.clientName, { x: COL_PORTFOLIO, y: rowY, size: 10, font: fontRegular, color: LIGHT_BLUE });
+
+    // right-align page number
+    const numStr = String(startPage);
+    const numW = fontRegular.widthOfTextAtSize(numStr, 10);
+    page.drawText(numStr, { x: COL_PAGE_R - numW, y: rowY, size: 10, font: fontRegular, color: LIGHT_BLUE });
+  });
+
+  // ── logo placeholder (bottom-left) ────────────────────────────────────────
+  // Three stacked wave arcs, drawn as bezier paths
+  drawWaveMark(page, MARGIN, 30, BLUE);
+  page.drawText("ArchBridge Family Office", {
+    x: MARGIN + 28, y: 32,
+    size: 8, font: fontBold, color: BLUE,
+  });
+
+  return page;
+}
+
+/**
+ * Draws a simplified version of the ArchBridge wave mark using three bezier arcs.
+ * Each arc bows upward; arcs are stacked and shrink toward the top.
+ */
+function drawWaveMark(page: PDFPage, x: number, y: number, color: ReturnType<typeof rgb>) {
+  // arc params: [startX offset, width, peakHeight]
+  const arcs: [number, number, number][] = [
+    [0,   20, 6],  // bottom — widest
+    [2,   16, 5],  // middle
+    [4,   12, 4],  // top    — narrowest
+  ];
+
+  arcs.forEach(([ox, w, h], i) => {
+    const sy = y + i * 6;
+    const sx = x + ox;
+    // approximate arc with a cubic bezier that bows upward
+    const path =
+      `M ${sx} ${sy} ` +
+      `C ${sx + w * 0.25} ${sy + h}, ${sx + w * 0.75} ${sy + h}, ${sx + w} ${sy}`;
+    page.drawSvgPath(path, { x: 0, y: 0, borderColor: color, borderWidth: 1.5 });
+  });
 }

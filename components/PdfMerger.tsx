@@ -16,19 +16,23 @@ import {
   sortableKeyboardCoordinates,
   rectSortingStrategy,
 } from "@dnd-kit/sortable";
-import { mergePdfs } from "@/lib/mergePdfs";
+import { buildPerformanceBook } from "@/lib/mergePdfs";
 import PdfCard from "@/components/PdfCard";
 
 export interface PdfFile {
   id: string;
   file: File;
+  sectionName: string;
 }
 
 export default function PdfMerger() {
-  const [pdfFiles, setPdfFiles] = useState<PdfFile[]>([]);
+  const [pdfFiles, setPdfFiles]       = useState<PdfFile[]>([]);
+  const [coverId, setCoverId]         = useState<string | null>(null);
+  const [clientName, setClientName]   = useState("");
+  const [periodDate, setPeriodDate]   = useState("");
   const [isDraggingOver, setIsDraggingOver] = useState(false);
-  const [isMerging, setIsMerging] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [isBuilding, setIsBuilding]   = useState(false);
+  const [error, setError]             = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const sensors = useSensors(
@@ -36,12 +40,14 @@ export default function PdfMerger() {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
+  // ── file management ────────────────────────────────────────────────────────
   const addFiles = useCallback((files: FileList | File[]) => {
     const newFiles: PdfFile[] = Array.from(files)
       .filter((f) => f.type === "application/pdf")
       .map((file) => ({
         id: `${file.name}-${Date.now()}-${Math.random()}`,
         file,
+        sectionName: file.name.replace(/\.pdf$/i, ""),
       }));
 
     if (newFiles.length === 0) {
@@ -49,32 +55,24 @@ export default function PdfMerger() {
       return;
     }
     setError(null);
-    setPdfFiles((prev) => [...prev, ...newFiles]);
-  }, []);
+    setPdfFiles((prev) => {
+      const next = [...prev, ...newFiles];
+      // auto-assign the first file ever as cover
+      if (!coverId) setCoverId(newFiles[0].id);
+      return next;
+    });
+  }, [coverId]);
 
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) {
-      addFiles(e.target.files);
-      e.target.value = "";
-    }
+    if (e.target.files) { addFiles(e.target.files); e.target.value = ""; }
   };
 
   const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDraggingOver(false);
-    addFiles(e.dataTransfer.files);
+    e.preventDefault(); setIsDraggingOver(false); addFiles(e.dataTransfer.files);
   };
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDraggingOver(true);
-  };
-
+  const handleDragOver  = (e: React.DragEvent) => { e.preventDefault(); setIsDraggingOver(true); };
   const handleDragLeave = (e: React.DragEvent) => {
-    // Only clear if leaving the entire container
-    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-      setIsDraggingOver(false);
-    }
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) setIsDraggingOver(false);
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
@@ -89,36 +87,58 @@ export default function PdfMerger() {
   };
 
   const removeFile = (id: string) => {
-    setPdfFiles((prev) => prev.filter((f) => f.id !== id));
+    setPdfFiles((prev) => {
+      const next = prev.filter((f) => f.id !== id);
+      // re-assign cover if the cover card was removed
+      if (id === coverId) setCoverId(next[0]?.id ?? null);
+      return next;
+    });
   };
 
-  const handleMerge = async () => {
-    if (pdfFiles.length < 2) {
-      setError("Add at least 2 PDFs to merge.");
-      return;
-    }
-    setIsMerging(true);
+  const renameSection = (id: string, name: string) => {
+    setPdfFiles((prev) => prev.map((f) => f.id === id ? { ...f, sectionName: name } : f));
+  };
+
+  const handleSetCover = (id: string) => setCoverId(id);
+
+  const handleClear = () => { setPdfFiles([]); setCoverId(null); setError(null); };
+
+  // ── build ──────────────────────────────────────────────────────────────────
+  const handleBuild = async () => {
+    if (!coverId) { setError("Designate one PDF as the cover (FRP) source."); return; }
+    if (!clientName.trim()) { setError("Enter a client name."); return; }
+    if (!periodDate.trim()) { setError("Enter a period ending date."); return; }
+
+    const coverFile  = pdfFiles.find((f) => f.id === coverId)!;
+    const otherFiles = pdfFiles.filter((f) => f.id !== coverId);
+
+    setIsBuilding(true);
     setError(null);
     try {
-      const merged = await mergePdfs(pdfFiles.map((p) => p.file));
-      const arrayBuffer = new ArrayBuffer(merged.byteLength);
-      new Uint8Array(arrayBuffer).set(merged);
-      const blob = new Blob([arrayBuffer], { type: "application/pdf" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "stapled.pdf";
+      const bytes = await buildPerformanceBook(
+        { file: coverFile.file, name: coverFile.sectionName },
+        otherFiles.map((f) => ({ file: f.file, name: f.sectionName })),
+        { clientName: clientName.trim(), periodDate: periodDate.trim() },
+      );
+      const buf  = new ArrayBuffer(bytes.byteLength);
+      new Uint8Array(buf).set(bytes);
+      const blob = new Blob([buf], { type: "application/pdf" });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement("a");
+      a.href     = url;
+      a.download = "performance-book.pdf";
       a.click();
       URL.revokeObjectURL(url);
     } catch (err) {
       console.error(err);
-      setError("Failed to merge PDFs. Make sure all files are valid PDFs.");
+      setError("Failed to build the book. Make sure all files are valid PDFs.");
     } finally {
-      setIsMerging(false);
+      setIsBuilding(false);
     }
   };
 
-  const hasFiles = pdfFiles.length > 0;
+  const hasFiles   = pdfFiles.length > 0;
+  const canBuild   = hasFiles && !!coverId && !!clientName.trim() && !!periodDate.trim();
 
   return (
     <div
@@ -127,14 +147,38 @@ export default function PdfMerger() {
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
     >
-      {/* Global drag-over overlay */}
+      {/* Drop overlay */}
       {isDraggingOver && (
         <div className="absolute inset-0 z-20 rounded-2xl border-2 border-blue-400 bg-blue-50/80 flex items-center justify-center pointer-events-none">
           <p className="text-blue-600 font-semibold text-lg">Drop PDFs to add them</p>
         </div>
       )}
 
-      {/* Toolbar */}
+      {/* ── Metadata form ────────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-2 gap-3 mb-5">
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium text-stone-500 uppercase tracking-wide">Client Name</label>
+          <input
+            type="text"
+            value={clientName}
+            onChange={(e) => setClientName(e.target.value)}
+            placeholder="e.g. Nathan & Janet Davis"
+            className="px-3 py-2 rounded-lg border border-stone-200 text-sm text-stone-800 placeholder-stone-300 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:border-blue-400"
+          />
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium text-stone-500 uppercase tracking-wide">Period Ending</label>
+          <input
+            type="text"
+            value={periodDate}
+            onChange={(e) => setPeriodDate(e.target.value)}
+            placeholder="e.g. December 31, 2025"
+            className="px-3 py-2 rounded-lg border border-stone-200 text-sm text-stone-800 placeholder-stone-300 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:border-blue-400"
+          />
+        </div>
+      </div>
+
+      {/* ── Toolbar ──────────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between mb-4 gap-3">
         <div className="flex items-center gap-3">
           <button
@@ -146,7 +190,6 @@ export default function PdfMerger() {
             </svg>
             Add PDFs
           </button>
-
           {hasFiles && (
             <span className="text-sm text-stone-400">
               {pdfFiles.length} file{pdfFiles.length !== 1 ? "s" : ""}
@@ -157,31 +200,31 @@ export default function PdfMerger() {
         <div className="flex items-center gap-2">
           {hasFiles && (
             <button
-              onClick={() => setPdfFiles([])}
+              onClick={handleClear}
               className="px-3 py-2 rounded-lg text-sm text-stone-400 hover:text-red-500 hover:bg-red-50 transition-colors"
             >
               Clear all
             </button>
           )}
           <button
-            onClick={handleMerge}
-            disabled={pdfFiles.length < 2 || isMerging}
+            onClick={handleBuild}
+            disabled={!canBuild || isBuilding}
             className="flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-stone-200 disabled:text-stone-400 disabled:cursor-not-allowed transition-colors"
           >
-            {isMerging ? (
+            {isBuilding ? (
               <>
                 <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
                 </svg>
-                Merging…
+                Building…
               </>
             ) : (
               <>
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                 </svg>
-                Merge & Download
+                Build Book
               </>
             )}
           </button>
@@ -204,6 +247,13 @@ export default function PdfMerger() {
         </p>
       )}
 
+      {/* Cover hint */}
+      {hasFiles && !coverId && (
+        <p className="mb-4 text-sm text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-4 py-2">
+          Click the bookmark icon on the FRP card to designate it as the cover source.
+        </p>
+      )}
+
       {/* Empty state */}
       {!hasFiles && (
         <div
@@ -217,18 +267,14 @@ export default function PdfMerger() {
           </div>
           <div>
             <p className="text-sm font-medium text-stone-700">Drop PDFs here or click to browse</p>
-            <p className="text-xs text-stone-400 mt-1">Add as many as you need, then reorder and merge</p>
+            <p className="text-xs text-stone-400 mt-1">Add your FRP and supporting reports, then build</p>
           </div>
         </div>
       )}
 
       {/* Card grid */}
       {hasFiles && (
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragEnd={handleDragEnd}
-        >
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           <SortableContext items={pdfFiles.map((f) => f.id)} strategy={rectSortingStrategy}>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
               {pdfFiles.map((pdf, index) => (
@@ -236,7 +282,10 @@ export default function PdfMerger() {
                   key={pdf.id}
                   pdf={pdf}
                   index={index}
+                  isCover={pdf.id === coverId}
                   onRemove={removeFile}
+                  onRename={renameSection}
+                  onSetCover={handleSetCover}
                 />
               ))}
 
