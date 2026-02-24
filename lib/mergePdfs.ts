@@ -33,6 +33,16 @@ const COL_REPORT    = MARGIN + 90;
 const COL_PORTFOLIO = MARGIN + 340;
 const COL_PAGE_R    = PAGE_W - MARGIN; // right-edge for right-aligned page numbers
 
+// Report titles that represent the whole book, not a sub-portfolio.
+// For these, the Portfolio column should show the overall client name.
+const AGGREGATE_REPORTS = new Set([
+  "Disclosures",
+  "Aggregate Portfolio Summary",
+  "Aggregate Portfolio Performance",
+  "Summary of Net Assets",
+  "Glossary",
+]);
+
 /**
  * Build the performance book.
  *
@@ -78,9 +88,12 @@ export async function buildPerformanceBook(
       for (const info of frpPageInfo) {
         const key = `${info.reportTitle}|${info.portfolioName}`;
         if (key !== lastKey) {
+          const portfolioName = AGGREGATE_REPORTS.has(info.reportTitle)
+            ? metadata.clientName
+            : info.portfolioName;
           tocEntries.push({
             reportTitle:   info.reportTitle,
-            portfolioName: info.portfolioName,
+            portfolioName,
             page:          curPage,
           });
           lastKey = key;
