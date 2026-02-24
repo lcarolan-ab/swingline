@@ -14,15 +14,14 @@ import {
   arrayMove,
   SortableContext,
   sortableKeyboardCoordinates,
-  verticalListSortingStrategy,
+  rectSortingStrategy,
 } from "@dnd-kit/sortable";
 import { mergePdfs } from "@/lib/mergePdfs";
-import SortablePdfItem from "@/components/SortablePdfItem";
+import PdfCard from "@/components/PdfCard";
 
 export interface PdfFile {
   id: string;
   file: File;
-  pageCount?: number;
 }
 
 export default function PdfMerger() {
@@ -33,10 +32,8 @@ export default function PdfMerger() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const sensors = useSensors(
-    useSensor(PointerSensor),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
   const addFiles = useCallback((files: FileList | File[]) => {
@@ -48,10 +45,9 @@ export default function PdfMerger() {
       }));
 
     if (newFiles.length === 0) {
-      setError("Please select valid PDF files.");
+      setError("Only PDF files are supported.");
       return;
     }
-
     setError(null);
     setPdfFiles((prev) => [...prev, ...newFiles]);
   }, []);
@@ -74,7 +70,12 @@ export default function PdfMerger() {
     setIsDraggingOver(true);
   };
 
-  const handleDragLeave = () => setIsDraggingOver(false);
+  const handleDragLeave = (e: React.DragEvent) => {
+    // Only clear if leaving the entire container
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+      setIsDraggingOver(false);
+    }
+  };
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
@@ -93,13 +94,11 @@ export default function PdfMerger() {
 
   const handleMerge = async () => {
     if (pdfFiles.length < 2) {
-      setError("Please add at least 2 PDFs to merge.");
+      setError("Add at least 2 PDFs to merge.");
       return;
     }
-
     setIsMerging(true);
     setError(null);
-
     try {
       const merged = await mergePdfs(pdfFiles.map((p) => p.file));
       const arrayBuffer = new ArrayBuffer(merged.byteLength);
@@ -119,104 +118,142 @@ export default function PdfMerger() {
     }
   };
 
+  const hasFiles = pdfFiles.length > 0;
+
   return (
-    <div className="space-y-4">
-      {/* Drop zone */}
-      <div
-        className={`border-2 border-dashed rounded-xl p-10 text-center cursor-pointer transition-colors ${
-          isDraggingOver
-            ? "border-blue-500 bg-blue-50"
-            : "border-gray-300 bg-white hover:border-gray-400 hover:bg-gray-50"
-        }`}
-        onClick={() => fileInputRef.current?.click()}
-        onDrop={handleDrop}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-      >
-        <div className="flex flex-col items-center gap-2 text-gray-500">
-          <svg
-            className="w-10 h-10 text-gray-400"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={1.5}
-              d="M12 16v-8m0 0-3 3m3-3 3 3M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1"
-            />
-          </svg>
-          <p className="text-sm font-medium">
-            Drop PDFs here or{" "}
-            <span className="text-blue-600 underline">browse</span>
-          </p>
-          <p className="text-xs text-gray-400">PDF files only</p>
+    <div
+      className="relative"
+      onDrop={handleDrop}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+    >
+      {/* Global drag-over overlay */}
+      {isDraggingOver && (
+        <div className="absolute inset-0 z-20 rounded-2xl border-2 border-blue-400 bg-blue-50/80 flex items-center justify-center pointer-events-none">
+          <p className="text-blue-600 font-semibold text-lg">Drop PDFs to add them</p>
         </div>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="application/pdf"
-          multiple
-          className="hidden"
-          onChange={handleFileInput}
-        />
+      )}
+
+      {/* Toolbar */}
+      <div className="flex items-center justify-between mb-4 gap-3">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-colors shadow-sm"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            Add PDFs
+          </button>
+
+          {hasFiles && (
+            <span className="text-sm text-gray-400">
+              {pdfFiles.length} file{pdfFiles.length !== 1 ? "s" : ""}
+            </span>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2">
+          {hasFiles && (
+            <button
+              onClick={() => setPdfFiles([])}
+              className="px-3 py-2 rounded-lg text-sm text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+            >
+              Clear all
+            </button>
+          )}
+          <button
+            onClick={handleMerge}
+            disabled={pdfFiles.length < 2 || isMerging}
+            className="flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed transition-colors shadow-sm"
+          >
+            {isMerging ? (
+              <>
+                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                </svg>
+                Merging…
+              </>
+            ) : (
+              <>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                Merge & Download
+              </>
+            )}
+          </button>
+        </div>
       </div>
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="application/pdf"
+        multiple
+        className="hidden"
+        onChange={handleFileInput}
+      />
 
       {/* Error */}
       {error && (
-        <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-2">
+        <p className="mb-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-2">
           {error}
         </p>
       )}
 
-      {/* File list */}
-      {pdfFiles.length > 0 && (
-        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-          <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-            <span className="text-sm font-medium text-gray-700">
-              {pdfFiles.length} file{pdfFiles.length !== 1 ? "s" : ""} — drag to reorder
-            </span>
-            <button
-              onClick={() => setPdfFiles([])}
-              className="text-xs text-gray-400 hover:text-red-500 transition-colors"
-            >
-              Clear all
-            </button>
+      {/* Empty state */}
+      {!hasFiles && (
+        <div
+          className="flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-gray-200 bg-white py-24 text-center cursor-pointer hover:border-gray-300 hover:bg-gray-50 transition-colors"
+          onClick={() => fileInputRef.current?.click()}
+        >
+          <div className="w-14 h-14 rounded-2xl bg-gray-100 flex items-center justify-center">
+            <svg className="w-7 h-7 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
           </div>
-
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragEnd={handleDragEnd}
-          >
-            <SortableContext
-              items={pdfFiles.map((f) => f.id)}
-              strategy={verticalListSortingStrategy}
-            >
-              <ul className="divide-y divide-gray-100">
-                {pdfFiles.map((pdf, index) => (
-                  <SortablePdfItem
-                    key={pdf.id}
-                    pdf={pdf}
-                    index={index}
-                    onRemove={removeFile}
-                  />
-                ))}
-              </ul>
-            </SortableContext>
-          </DndContext>
+          <div>
+            <p className="text-sm font-medium text-gray-700">Drop PDFs here or click to browse</p>
+            <p className="text-xs text-gray-400 mt-1">Add as many as you need, then reorder and merge</p>
+          </div>
         </div>
       )}
 
-      {/* Merge button */}
-      <button
-        onClick={handleMerge}
-        disabled={pdfFiles.length < 2 || isMerging}
-        className="w-full py-3 px-6 rounded-xl font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-      >
-        {isMerging ? "Merging…" : `Merge ${pdfFiles.length > 0 ? pdfFiles.length : ""} PDFs`}
-      </button>
+      {/* Card grid */}
+      {hasFiles && (
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
+        >
+          <SortableContext items={pdfFiles.map((f) => f.id)} strategy={rectSortingStrategy}>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+              {pdfFiles.map((pdf, index) => (
+                <PdfCard
+                  key={pdf.id}
+                  pdf={pdf}
+                  index={index}
+                  onRemove={removeFile}
+                />
+              ))}
+
+              {/* Add more card */}
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-gray-200 bg-white aspect-[3/4] text-gray-400 hover:border-blue-300 hover:text-blue-500 hover:bg-blue-50 transition-colors"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                <span className="text-xs font-medium">Add more</span>
+              </button>
+            </div>
+          </SortableContext>
+        </DndContext>
+      )}
     </div>
   );
 }
