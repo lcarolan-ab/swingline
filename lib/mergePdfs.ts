@@ -238,12 +238,6 @@ function buildTocPages(
     });
 
     // ── table header ──────────────────────────────────────────────────────
-    page.drawLine({
-      start: { x: MARGIN, y: TABLE_TOP },
-      end:   { x: PAGE_W - MARGIN, y: TABLE_TOP },
-      thickness: 1.5, color: BLACK,
-    });
-
     const headerY = TABLE_TOP - 18;
     page.drawText("Section",   { x: COL_SECTION,   y: headerY, size: 11, font: fontBold, color: BLUE });
     page.drawText("Report",    { x: COL_REPORT,     y: headerY, size: 11, font: fontBold, color: BLUE });
