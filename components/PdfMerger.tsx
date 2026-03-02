@@ -26,6 +26,7 @@ export interface PdfFile {
   id: string;
   file: File;
   sectionName: string;
+  isFrp: boolean;
 }
 
 export default function PdfMerger() {
@@ -51,12 +52,15 @@ export default function PdfMerger() {
 
   // ── file management ────────────────────────────────────────────────────────
   const addFiles = useCallback((files: FileList | File[]) => {
+    const isFirstUpload = !coverId;
     const newFiles: PdfFile[] = Array.from(files)
       .filter((f) => f.type === "application/pdf")
-      .map((file) => ({
+      .map((file, i) => ({
         id: `${file.name}-${Date.now()}-${Math.random()}`,
         file,
         sectionName: file.name.replace(/\.pdf$/i, ""),
+        // Auto-mark the very first file as FRP (it also becomes the cover)
+        isFrp: isFirstUpload && i === 0,
       }));
 
     if (newFiles.length === 0) {
@@ -66,36 +70,42 @@ export default function PdfMerger() {
     setError(null);
     setPdfFiles((prev) => {
       const next = [...prev, ...newFiles];
-      // auto-assign the first file ever as cover
-      if (!coverId) setCoverId(newFiles[0].id);
+      if (isFirstUpload) setCoverId(newFiles[0].id);
       return next;
     });
 
-    // Kick off extraction for each new file
+    // Only extract for files marked as FRP on creation (i.e. the auto-cover)
     for (const pf of newFiles) {
-      setExtractingIds((prev) => new Set(prev).add(pf.id));
-      extractFrpPageInfo(pf.file)
-        .then((info) => {
-          setExtractions((prev) => ({ ...prev, [pf.id]: info }));
-        })
-        .catch(() => {
-          // Extraction failed — leave empty (treated as non-FRP)
-        })
-        .finally(() => {
-          setExtractingIds((prev) => {
-            const next = new Set(prev);
-            next.delete(pf.id);
-            return next;
-          });
-        });
+      if (pf.isFrp) startExtraction(pf);
     }
-  }, [coverId]);
+  }, [coverId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── re-derive sections when extractions or coverId changes ────────────────
+  // ── extraction helper ─────────────────────────────────────────────────────
+  const startExtraction = useCallback((pf: PdfFile) => {
+    if (extractions[pf.id]) return; // already extracted
+    setExtractingIds((prev) => new Set(prev).add(pf.id));
+    extractFrpPageInfo(pf.file)
+      .then((info) => {
+        setExtractions((prev) => ({ ...prev, [pf.id]: info }));
+      })
+      .catch(() => { /* treated as non-FRP */ })
+      .finally(() => {
+        setExtractingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(pf.id);
+          return next;
+        });
+      });
+  }, [extractions]);
+
+  // ── re-derive sections when extractions, coverId, or isFrp flags change ──
+  const frpIds = pdfFiles.filter((f) => f.isFrp).map((f) => f.id);
   useEffect(() => {
     setSectionsByPdf((prev) => {
       const next: Record<string, FrpSection[]> = {};
-      for (const [id, info] of Object.entries(extractions)) {
+      for (const id of frpIds) {
+        const info = extractions[id];
+        if (!info) continue;
         const isCover  = id === coverId;
         const startIdx = isCover ? 1 : 0;
         const newSections = groupFrpSections(info, startIdx);
@@ -116,7 +126,7 @@ export default function PdfMerger() {
       }
       return next;
     });
-  }, [extractions, coverId]);
+  }, [extractions, coverId, frpIds.join(",")]);
 
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) { addFiles(e.target.files); e.target.value = ""; }
@@ -156,7 +166,23 @@ export default function PdfMerger() {
     setPdfFiles((prev) => prev.map((f) => f.id === id ? { ...f, sectionName: name } : f));
   };
 
-  const handleSetCover = (id: string) => setCoverId(id);
+  const handleSetCover = (id: string) => {
+    setCoverId(id);
+    // Setting as cover implies FRP — mark it and kick off extraction
+    setPdfFiles((prev) => prev.map((f) => f.id === id ? { ...f, isFrp: true } : f));
+    const pf = pdfFiles.find((f) => f.id === id);
+    if (pf) startExtraction(pf);
+  };
+
+  const handleToggleFrp = (id: string) => {
+    setPdfFiles((prev) => {
+      const file = prev.find((f) => f.id === id);
+      if (!file) return prev;
+      const willBeFrp = !file.isFrp;
+      if (willBeFrp) startExtraction(file);
+      return prev.map((f) => f.id === id ? { ...f, isFrp: willBeFrp } : f);
+    });
+  };
 
   const toggleSection = (pdfId: string, sectionId: string) => {
     setSectionsByPdf((prev) => ({
@@ -199,9 +225,10 @@ export default function PdfMerger() {
       const frpData = new Map<number, SectionFrpData>();
 
       for (let i = 0; i < pdfFiles.length; i++) {
-        const id       = pdfFiles[i].id;
-        const pageInfo = extractions[id];
-        const sections = sectionsByPdf[id];
+        const pf       = pdfFiles[i];
+        if (!pf.isFrp) continue;
+        const pageInfo = extractions[pf.id];
+        const sections = sectionsByPdf[pf.id];
         if (!pageInfo || !sections || sections.length === 0) continue;
 
         const includedPages = new Set<number>();
@@ -380,11 +407,13 @@ export default function PdfMerger() {
                   pdf={pdf}
                   index={index}
                   isCover={pdf.id === coverId}
-                  sections={sectionsByPdf[pdf.id] ?? []}
-                  isExtracting={extractingIds.has(pdf.id)}
+                  isFrp={pdf.isFrp}
+                  sections={pdf.isFrp ? (sectionsByPdf[pdf.id] ?? []) : []}
+                  isExtracting={pdf.isFrp && extractingIds.has(pdf.id)}
                   onRemove={removeFile}
                   onRename={renameSection}
                   onSetCover={handleSetCover}
+                  onToggleFrp={handleToggleFrp}
                   onToggleSection={(sectionId) => toggleSection(pdf.id, sectionId)}
                 />
               ))}

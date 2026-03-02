@@ -100,7 +100,7 @@ export async function buildPerformanceBook(
         const key = `${info.reportTitle}|${info.portfolioName}`;
         if (key !== lastKey) {
           const portfolioName = AGGREGATE_REPORTS.has(info.reportTitle)
-            ? metadata.clientName
+            ? sections[i].name
             : info.portfolioName;
           tocEntries.push({
             reportTitle:   info.reportTitle,

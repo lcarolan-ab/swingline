@@ -10,17 +10,19 @@ interface Props {
   pdf: PdfFile;
   index: number;
   isCover: boolean;
+  isFrp: boolean;
   sections: FrpSection[];
   isExtracting: boolean;
   onRemove: (id: string) => void;
   onRename: (id: string, name: string) => void;
   onSetCover: (id: string) => void;
+  onToggleFrp: (id: string) => void;
   onToggleSection: (sectionId: string) => void;
 }
 
 export default function PdfCard({
-  pdf, index, isCover, sections, isExtracting,
-  onRemove, onRename, onSetCover, onToggleSection,
+  pdf, index, isCover, isFrp, sections, isExtracting,
+  onRemove, onRename, onSetCover, onToggleFrp, onToggleSection,
 }: Props) {
   const [expanded, setExpanded] = useState(false);
   const hasSections = sections.length > 1;
@@ -82,20 +84,34 @@ export default function PdfCard({
       >
         <PdfIcon />
 
-        {/* Set-as-cover bookmark button — shown on hover (or always when cover) */}
-        <button
-          onClick={(e) => { e.stopPropagation(); onSetCover(pdf.id); }}
-          onPointerDown={(e) => e.stopPropagation()} // prevent drag from activating
-          title={isCover ? "This PDF provides the cover page" : "Set as cover (FRP)"}
-          className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border transition-all ${
-            isCover
-              ? "bg-blue-50 border-blue-300 text-blue-600"
-              : "bg-white border-stone-200 text-stone-400 opacity-0 group-hover:opacity-100 hover:border-blue-300 hover:text-blue-500"
-          }`}
-        >
-          <BookmarkIcon filled={isCover} />
-          {isCover ? "Cover source" : "Set as cover"}
-        </button>
+        {/* Action buttons — shown on hover (cover always visible) */}
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={(e) => { e.stopPropagation(); onSetCover(pdf.id); }}
+            onPointerDown={(e) => e.stopPropagation()}
+            title={isCover ? "This PDF provides the cover page" : "Set as cover"}
+            className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border transition-all ${
+              isCover
+                ? "bg-blue-50 border-blue-300 text-blue-600"
+                : "bg-white border-stone-200 text-stone-400 opacity-0 group-hover:opacity-100 hover:border-blue-300 hover:text-blue-500"
+            }`}
+          >
+            <BookmarkIcon filled={isCover} />
+            {isCover ? "Cover" : "Set cover"}
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); onToggleFrp(pdf.id); }}
+            onPointerDown={(e) => e.stopPropagation()}
+            title={isFrp ? "This PDF is an FRP report (click to unmark)" : "Mark as FRP report"}
+            className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border transition-all ${
+              isFrp
+                ? "bg-amber-50 border-amber-300 text-amber-700"
+                : "bg-white border-stone-200 text-stone-400 opacity-0 group-hover:opacity-100 hover:border-amber-300 hover:text-amber-600"
+            }`}
+          >
+            FRP
+          </button>
+        </div>
       </div>
 
       {/* Section toggle — shown when extraction found 2+ groups */}
