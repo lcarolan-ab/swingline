@@ -55,12 +55,17 @@ const AGGREGATE_REPORTS = new Set([
  * When `frpPageInfo` is supplied the cover section's TOC row expands into one
  * row per content page, each showing the extracted report title and portfolio
  * name from that page's header.
+ *
+ * `frpIncludedPages` is an optional set of 0-based indices into the
+ * `frpPageInfo` array.  When provided, only those FRP pages are included in
+ * the output (both TOC and content).  If omitted every page is included.
  */
 export async function buildPerformanceBook(
   sections: Section[],
   coverIndex: number,
   metadata: BookMetadata,
   frpPageInfo?: FrpPageInfo[],
+  frpIncludedPages?: Set<number>,
 ): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
 
@@ -83,9 +88,11 @@ export async function buildPerformanceBook(
     if (i === coverIndex && frpPageInfo && frpPageInfo.length > 0) {
       // One TOC row per unique (reportTitle, portfolioName) run; the page
       // number points to the first page where that combination appears.
-      // curPage still advances for every physical page regardless.
+      // curPage still advances for every *included* physical page.
       let lastKey = "";
-      for (const info of frpPageInfo) {
+      for (let pi = 0; pi < frpPageInfo.length; pi++) {
+        if (frpIncludedPages && !frpIncludedPages.has(pi)) continue;
+        const info = frpPageInfo[pi];
         const key = `${info.reportTitle}|${info.portfolioName}`;
         if (key !== lastKey) {
           const portfolioName = AGGREGATE_REPORTS.has(info.reportTitle)
@@ -126,9 +133,13 @@ export async function buildPerformanceBook(
   for (let i = 0; i < sections.length; i++) {
     const pdf = pdfs[i];
     if (i === coverIndex) {
-      // Skip page 1 — it's already the cover
+      // Skip page 1 — it's already the cover.
+      // When frpIncludedPages is provided, only copy the included pages.
       if (pdf.getPageCount() > 1) {
-        const indices = Array.from({ length: pdf.getPageCount() - 1 }, (_, j) => j + 1);
+        const allIndices = Array.from({ length: pdf.getPageCount() - 1 }, (_, j) => j + 1);
+        const indices = frpIncludedPages
+          ? allIndices.filter((_, j) => frpIncludedPages.has(j))
+          : allIndices;
         for (const p of await doc.copyPages(pdf, indices)) doc.addPage(p);
       }
     } else {
