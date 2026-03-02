@@ -42,14 +42,34 @@ const COL_REPORT    = MARGIN + 90;
 const COL_PORTFOLIO = MARGIN + 340;
 const COL_PAGE_R    = PAGE_W - MARGIN; // right-edge for right-aligned page numbers
 
+// ─── TOC pagination constants ───────────────────────────────────────────────
+const ROW_HEIGHT = 14;
+const BOTTOM_CUTOFF = 54;   // keep clear of logo area
+
+// First TOC page has title + date above the table, so the table starts lower.
+const FIRST_TABLE_TOP    = PAGE_H - 148;
+const FIRST_FIRST_ROW_Y  = FIRST_TABLE_TOP - 40;
+const ROWS_FIRST_PAGE    = Math.floor((FIRST_FIRST_ROW_Y - BOTTOM_CUTOFF) / ROW_HEIGHT);
+
+// Continuation pages omit the title/date so the table starts higher.
+const CONT_TABLE_TOP     = PAGE_H - 70;
+const CONT_FIRST_ROW_Y   = CONT_TABLE_TOP - 40;
+const ROWS_CONT_PAGE     = Math.floor((CONT_FIRST_ROW_Y - BOTTOM_CUTOFF) / ROW_HEIGHT);
+
+/** How many landscape pages are needed for `n` TOC rows? */
+function tocPageCount(n: number): number {
+  if (n <= ROWS_FIRST_PAGE) return 1;
+  return 1 + Math.ceil((n - ROWS_FIRST_PAGE) / ROWS_CONT_PAGE);
+}
+
 /**
  * Build the performance book.
  *
  * Structure of the output:
- *   Page 1   — cover page  (page 1 of the section at coverIndex)
- *   Page 2   — generated Table of Contents
- *   Pages 3… — all sections in display order; the cover section contributes
- *               only its pages 2… (page 1 was used as the cover above)
+ *   Page 1        — cover page  (page 1 of the section at coverIndex)
+ *   Pages 2…T     — generated Table of Contents (T pages, paginated)
+ *   Pages T+1…    — all sections in display order; the cover section contributes
+ *                    only its pages 2… (page 1 was used as the cover above)
  *
  * `frpData` is an optional map keyed by section index.  For each section that
  * has FRP extraction data the TOC expands into one row per unique
@@ -73,10 +93,9 @@ export async function buildPerformanceBook(
     sections.map(async (s) => PDFDocument.load(await s.file.arrayBuffer())),
   );
 
-  // ── calculate TOC entries (sections in display order) ─────────────────────
-  // Page 1 = cover, Page 2 = TOC, Page 3+ = section content in display order.
+  // ── calculate TOC entries (preliminary — page numbers assume 1 TOC page) ──
   const tocEntries: TocEntry[] = [];
-  let curPage = 3;
+  let curPage = 3; // cover = 1, TOC = 2, content starts at 3
 
   for (let i = 0; i < sections.length; i++) {
     const data = frpData?.get(i);
@@ -119,13 +138,20 @@ export async function buildPerformanceBook(
     }
   }
 
+  // ── adjust page numbers if the TOC spills onto multiple pages ─────────────
+  const numTocPages = tocPageCount(tocEntries.length);
+  const pageShift   = numTocPages - 1; // extra pages beyond the assumed 1
+  if (pageShift > 0) {
+    for (const entry of tocEntries) entry.page += pageShift;
+  }
+
   // ── assemble the document ─────────────────────────────────────────────────
   // 1. Cover page (page 1 of the designated cover PDF)
   const [coverPage] = await doc.copyPages(pdfs[coverIndex], [0]);
   doc.addPage(coverPage);
 
-  // 2. TOC page
-  await buildTocPage(doc, metadata, tocEntries, fontBold, fontRegular, fontOblique);
+  // 2. TOC pages
+  buildTocPages(doc, metadata, tocEntries, fontBold, fontRegular, fontOblique);
 
   // 3. Section content in display order
   for (let i = 0; i < sections.length; i++) {
@@ -165,11 +191,12 @@ export async function buildPerformanceBook(
     }
   }
 
-  // 4. Stamp page numbers bottom-right, starting at page 3 (index 2).
-  //    Cover (index 0) and TOC (index 1) intentionally receive no number.
+  // 4. Stamp page numbers bottom-right on content pages.
+  //    Cover (index 0) and TOC pages (indices 1…numTocPages) get no number.
+  const firstContentIdx = 1 + numTocPages;
   const totalPages = doc.getPageCount();
   const GRAY = rgb(0.55, 0.55, 0.55);
-  for (let i = 2; i < totalPages; i++) {
+  for (let i = firstContentIdx; i < totalPages; i++) {
     const pg      = doc.getPage(i);
     const { width } = pg.getSize();
     const numStr  = String(i + 1);          // page 3, 4, 5 …
@@ -186,83 +213,107 @@ export async function buildPerformanceBook(
   return doc.save();
 }
 
-// ─── TOC page builder ─────────────────────────────────────────────────────────
-async function buildTocPage(
+// ─── TOC page builder (paginated) ────────────────────────────────────────────
+
+function buildTocPages(
   doc: PDFDocument,
   metadata: BookMetadata,
   entries: TocEntry[],
   fontBold: PDFFont,
   fontRegular: PDFFont,
   fontOblique: PDFFont,
-): Promise<PDFPage> {
-  const page = doc.addPage([PAGE_W, PAGE_H]);
-
-  // ── title ──────────────────────────────────────────────────────────────────
-  page.drawText("Table of Contents", {
-    x: MARGIN, y: PAGE_H - 70,
-    size: 26, font: fontBold, color: BLUE,
-  });
-
-  // ── date ──────────────────────────────────────────────────────────────────
-  page.drawText(metadata.periodDate, {
-    x: MARGIN, y: PAGE_H - 98,
-    size: 13, font: fontOblique, color: BLUE,
-  });
-
-  // ── table ─────────────────────────────────────────────────────────────────
-  const tableTop = PAGE_H - 148;
-
-  // thick rule above headers
-  page.drawLine({
-    start: { x: MARGIN, y: tableTop },
-    end:   { x: PAGE_W - MARGIN, y: tableTop },
-    thickness: 1.5, color: BLACK,
-  });
-
-  // column headers
-  const headerY = tableTop - 18;
-  page.drawText("Section",   { x: COL_SECTION,   y: headerY, size: 11, font: fontBold, color: BLUE });
-  page.drawText("Report",    { x: COL_REPORT,     y: headerY, size: 11, font: fontBold, color: BLUE });
-  page.drawText("Portfolio", { x: COL_PORTFOLIO,  y: headerY, size: 11, font: fontBold, color: BLUE });
-  // right-align "Page" header
-  const pageHeaderW = fontBold.widthOfTextAtSize("Page", 11);
-  page.drawText("Page", { x: COL_PAGE_R - pageHeaderW, y: headerY, size: 11, font: fontBold, color: BLUE });
-
-  // thin rule below headers
-  page.drawLine({
-    start: { x: MARGIN, y: tableTop - 28 },
-    end:   { x: PAGE_W - MARGIN, y: tableTop - 28 },
-    thickness: 0.5, color: LIGHT_BLUE,
-  });
-
-  // column max-widths (leave 8pt gutter before the next column)
+): void {
   const MAX_REPORT_W    = COL_PORTFOLIO - COL_REPORT    - 8;
-  const MAX_PORTFOLIO_W = COL_PAGE_R    - COL_PORTFOLIO - 40; // 40pt buffer before page number
+  const MAX_PORTFOLIO_W = COL_PAGE_R    - COL_PORTFOLIO - 40;
 
-  // data rows
-  entries.forEach(({ reportTitle, portfolioName, page: startPage }, i) => {
-    const rowY = tableTop - 40 - i * 14;
-    const reportText    = truncateText(reportTitle,   fontRegular, 10, MAX_REPORT_W);
-    const portfolioText = truncateText(portfolioName, fontRegular, 10, MAX_PORTFOLIO_W);
+  let entryIdx = 0;
+  let pageNum  = 0;
 
-    page.drawText(String(i + 1), { x: COL_SECTION,   y: rowY, size: 10, font: fontRegular, color: LIGHT_BLUE });
-    page.drawText(reportText,    { x: COL_REPORT,     y: rowY, size: 10, font: fontRegular, color: LIGHT_BLUE });
-    page.drawText(portfolioText, { x: COL_PORTFOLIO,  y: rowY, size: 10, font: fontRegular, color: LIGHT_BLUE });
+  while (entryIdx < entries.length) {
+    const isFirst  = pageNum === 0;
+    const tableTop = isFirst ? FIRST_TABLE_TOP : CONT_TABLE_TOP;
+    const maxRows  = isFirst ? ROWS_FIRST_PAGE : ROWS_CONT_PAGE;
+    const page     = doc.addPage([PAGE_W, PAGE_H]);
 
-    // right-align page number
-    const numStr = String(startPage);
-    const numW   = fontRegular.widthOfTextAtSize(numStr, 10);
-    page.drawText(numStr, { x: COL_PAGE_R - numW, y: rowY, size: 10, font: fontRegular, color: LIGHT_BLUE });
-  });
+    // ── title & date (first page only) ────────────────────────────────────
+    if (isFirst) {
+      page.drawText("Table of Contents", {
+        x: MARGIN, y: PAGE_H - 70,
+        size: 26, font: fontBold, color: BLUE,
+      });
+      page.drawText(metadata.periodDate, {
+        x: MARGIN, y: PAGE_H - 98,
+        size: 13, font: fontOblique, color: BLUE,
+      });
+    }
 
-  // ── logo placeholder (bottom-left) ────────────────────────────────────────
-  drawWaveMark(page, MARGIN, 30, BLUE);
-  page.drawText("ArchBridge Family Office", {
-    x: MARGIN + 28, y: 32,
-    size: 8, font: fontBold, color: BLUE,
-  });
+    // ── table header ──────────────────────────────────────────────────────
+    page.drawLine({
+      start: { x: MARGIN, y: tableTop },
+      end:   { x: PAGE_W - MARGIN, y: tableTop },
+      thickness: 1.5, color: BLACK,
+    });
 
-  return page;
+    const headerY = tableTop - 18;
+    page.drawText("Section",   { x: COL_SECTION,   y: headerY, size: 11, font: fontBold, color: BLUE });
+    page.drawText("Report",    { x: COL_REPORT,     y: headerY, size: 11, font: fontBold, color: BLUE });
+    page.drawText("Portfolio", { x: COL_PORTFOLIO,  y: headerY, size: 11, font: fontBold, color: BLUE });
+    const pageHeaderW = fontBold.widthOfTextAtSize("Page", 11);
+    page.drawText("Page", { x: COL_PAGE_R - pageHeaderW, y: headerY, size: 11, font: fontBold, color: BLUE });
+
+    page.drawLine({
+      start: { x: MARGIN, y: tableTop - 28 },
+      end:   { x: PAGE_W - MARGIN, y: tableTop - 28 },
+      thickness: 0.5, color: LIGHT_BLUE,
+    });
+
+    // ── data rows ─────────────────────────────────────────────────────────
+    const rowsThisPage = Math.min(maxRows, entries.length - entryIdx);
+    for (let r = 0; r < rowsThisPage; r++) {
+      const { reportTitle, portfolioName, page: startPage } = entries[entryIdx];
+      const rowY = tableTop - 40 - r * ROW_HEIGHT;
+
+      const reportText    = truncateText(reportTitle,   fontRegular, 10, MAX_REPORT_W);
+      const portfolioText = truncateText(portfolioName, fontRegular, 10, MAX_PORTFOLIO_W);
+
+      page.drawText(String(entryIdx + 1), { x: COL_SECTION,   y: rowY, size: 10, font: fontRegular, color: LIGHT_BLUE });
+      page.drawText(reportText,           { x: COL_REPORT,     y: rowY, size: 10, font: fontRegular, color: LIGHT_BLUE });
+      page.drawText(portfolioText,        { x: COL_PORTFOLIO,  y: rowY, size: 10, font: fontRegular, color: LIGHT_BLUE });
+
+      const numStr = String(startPage);
+      const numW   = fontRegular.widthOfTextAtSize(numStr, 10);
+      page.drawText(numStr, { x: COL_PAGE_R - numW, y: rowY, size: 10, font: fontRegular, color: LIGHT_BLUE });
+
+      entryIdx++;
+    }
+
+    // ── logo (every TOC page) ─────────────────────────────────────────────
+    drawWaveMark(page, MARGIN, 30, BLUE);
+    page.drawText("ArchBridge Family Office", {
+      x: MARGIN + 28, y: 32,
+      size: 8, font: fontBold, color: BLUE,
+    });
+
+    pageNum++;
+  }
+
+  // Handle edge case: no entries at all — still need one blank TOC page
+  if (entries.length === 0) {
+    const page = doc.addPage([PAGE_W, PAGE_H]);
+    page.drawText("Table of Contents", {
+      x: MARGIN, y: PAGE_H - 70,
+      size: 26, font: fontBold, color: BLUE,
+    });
+    page.drawText(metadata.periodDate, {
+      x: MARGIN, y: PAGE_H - 98,
+      size: 13, font: fontOblique, color: BLUE,
+    });
+    drawWaveMark(page, MARGIN, 30, BLUE);
+    page.drawText("ArchBridge Family Office", {
+      x: MARGIN + 28, y: 32,
+      size: 8, font: fontBold, color: BLUE,
+    });
+  }
 }
 
 /** Truncates text with an ellipsis so it fits within maxWidth pts at the given size. */
