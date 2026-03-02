@@ -24,11 +24,16 @@ export interface FrpSection {
  *
  * Consecutive pages with the same (reportTitle, portfolioName) key are merged
  * into a single FrpSection so the user can toggle whole sections on or off.
+ *
+ * `startIdx` lets callers skip leading pages (e.g. pass 1 for a cover PDF so
+ * the cover page isn't included in the toggleable sections).  Indices stored
+ * in each FrpSection remain relative to the original `pages` array so they
+ * map directly to PDF page indices.
  */
-export function groupFrpSections(pages: FrpPageInfo[]): FrpSection[] {
+export function groupFrpSections(pages: FrpPageInfo[], startIdx = 0): FrpSection[] {
   const sections: FrpSection[] = [];
   let lastKey = "";
-  for (let i = 0; i < pages.length; i++) {
+  for (let i = startIdx; i < pages.length; i++) {
     const key = `${pages[i].reportTitle}|${pages[i].portfolioName}`;
     if (key !== lastKey) {
       sections.push({
@@ -50,12 +55,13 @@ export function groupFrpSections(pages: FrpPageInfo[]): FrpSection[] {
 /**
  * Extracts per-page header info from an FRP PDF for use in the TOC.
  *
- * Reads pages 2…N (page 1 is the book cover) and for each page collects
- * text items from the top 20 % of the page, splitting on the horizontal
- * midpoint:
+ * Reads every page (1…N) and for each page collects text items from the
+ * top 20 % of the page, splitting on the horizontal midpoint:
  *   - right half → report / section title
  *   - left half  → portfolio / entity name (prefers the second visual line,
  *                  i.e. the subheading, when two or more lines are present)
+ *
+ * The result array maps 1-to-1 with PDF pages: result[0] = page 1, etc.
  *
  * pdfjs-dist is imported dynamically so this module can be included in
  * "use client" components without triggering SSR prerender errors.
@@ -72,7 +78,7 @@ export async function extractFrpPageInfo(file: File): Promise<FrpPageInfo[]> {
 
   const results: FrpPageInfo[] = [];
 
-  for (let pageNum = 2; pageNum <= pdf.numPages; pageNum++) {
+  for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
     const page = await pdf.getPage(pageNum);
     const { width: pageWidth, height: pageHeight } = page.getViewport({ scale: 1 });
 
