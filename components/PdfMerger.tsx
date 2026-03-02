@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import {
   DndContext,
   closestCenter,
@@ -17,8 +17,10 @@ import {
   rectSortingStrategy,
 } from "@dnd-kit/sortable";
 import { buildPerformanceBook } from "@/lib/mergePdfs";
-import { extractFrpPageInfo } from "@/lib/extractFrpSections";
+import { extractFrpPageInfo, groupFrpSections } from "@/lib/extractFrpSections";
+import type { FrpPageInfo, FrpSection } from "@/lib/extractFrpSections";
 import PdfCard from "@/components/PdfCard";
+import FrpSectionPanel from "@/components/FrpSectionPanel";
 
 export interface PdfFile {
   id: string;
@@ -34,7 +36,12 @@ export default function PdfMerger() {
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [isBuilding, setIsBuilding]   = useState(false);
   const [error, setError]             = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [frpPageInfo, setFrpPageInfo]     = useState<FrpPageInfo[] | null>(null);
+  const [frpSections, setFrpSections]     = useState<FrpSection[]>([]);
+  const [isExtracting, setIsExtracting]   = useState(false);
+  const fileInputRef    = useRef<HTMLInputElement>(null);
+  const pdfFilesRef     = useRef(pdfFiles);
+  pdfFilesRef.current   = pdfFiles;
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -102,6 +109,41 @@ export default function PdfMerger() {
 
   const handleSetCover = (id: string) => setCoverId(id);
 
+  // ── extract FRP sections when cover changes ─────────────────────────────────
+  useEffect(() => {
+    if (!coverId) {
+      setFrpPageInfo(null);
+      setFrpSections([]);
+      return;
+    }
+    const coverFile = pdfFilesRef.current.find((f) => f.id === coverId);
+    if (!coverFile) return;
+
+    let cancelled = false;
+    setIsExtracting(true);
+    setFrpPageInfo(null);
+    setFrpSections([]);
+
+    extractFrpPageInfo(coverFile.file)
+      .then((info) => {
+        if (cancelled) return;
+        setFrpPageInfo(info);
+        setFrpSections(groupFrpSections(info));
+      })
+      .catch(() => {
+        if (!cancelled) setError("Failed to read FRP report sections.");
+      })
+      .finally(() => {
+        if (!cancelled) setIsExtracting(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [coverId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const toggleFrpSection = (id: string) => {
+    setFrpSections((prev) => prev.map((s) => s.id === id ? { ...s, enabled: !s.enabled } : s));
+  };
+
   /** Converts "YYYY-MM-DD" → "December 31, 2025" */
   const formatPeriodDate = (raw: string): string => {
     if (!raw) return "";
@@ -111,7 +153,7 @@ export default function PdfMerger() {
     });
   };
 
-  const handleClear = () => { setPdfFiles([]); setCoverId(null); setError(null); };
+  const handleClear = () => { setPdfFiles([]); setCoverId(null); setError(null); setFrpPageInfo(null); setFrpSections([]); };
 
   // ── build ──────────────────────────────────────────────────────────────────
   const handleBuild = async () => {
@@ -124,15 +166,22 @@ export default function PdfMerger() {
     setIsBuilding(true);
     setError(null);
     try {
-      // Extract per-page header info from the FRP (cover) PDF so the TOC can
-      // list individual subsections with their report title and entity name.
-      const frpPageInfo = await extractFrpPageInfo(pdfFiles[coverIndex].file);
+      // Build the set of included FRP page indices from the section toggles.
+      let includedPages: Set<number> | undefined;
+      if (frpPageInfo && frpSections.length > 0) {
+        includedPages = new Set<number>();
+        for (const s of frpSections) {
+          if (!s.enabled) continue;
+          for (let idx = s.startIdx; idx <= s.endIdx; idx++) includedPages.add(idx);
+        }
+      }
 
       const bytes = await buildPerformanceBook(
         pdfFiles.map((f) => ({ file: f.file, name: f.sectionName })),
         coverIndex,
         { clientName: clientName.trim(), periodDate: formatPeriodDate(periodDateRaw) },
-        frpPageInfo,
+        frpPageInfo ?? undefined,
+        includedPages,
       );
       const buf  = new ArrayBuffer(bytes.byteLength);
       new Uint8Array(buf).set(bytes);
@@ -315,6 +364,15 @@ export default function PdfMerger() {
             </div>
           </SortableContext>
         </DndContext>
+      )}
+
+      {/* FRP section breakout — shown once a cover is set and sections are extracted */}
+      {(isExtracting || frpSections.length > 0) && (
+        <FrpSectionPanel
+          sections={frpSections}
+          isExtracting={isExtracting}
+          onToggle={toggleFrpSection}
+        />
       )}
     </div>
   );

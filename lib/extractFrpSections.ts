@@ -7,6 +7,46 @@ export interface FrpPageInfo {
   portfolioName: string;
 }
 
+/** A group of consecutive FRP pages sharing the same report title / portfolio. */
+export interface FrpSection {
+  id: string;
+  reportTitle: string;
+  portfolioName: string;
+  /** Inclusive start index into the FrpPageInfo[] array. */
+  startIdx: number;
+  /** Inclusive end index into the FrpPageInfo[] array. */
+  endIdx: number;
+  enabled: boolean;
+}
+
+/**
+ * Groups a flat FrpPageInfo[] into consecutive sections.
+ *
+ * Consecutive pages with the same (reportTitle, portfolioName) key are merged
+ * into a single FrpSection so the user can toggle whole sections on or off.
+ */
+export function groupFrpSections(pages: FrpPageInfo[]): FrpSection[] {
+  const sections: FrpSection[] = [];
+  let lastKey = "";
+  for (let i = 0; i < pages.length; i++) {
+    const key = `${pages[i].reportTitle}|${pages[i].portfolioName}`;
+    if (key !== lastKey) {
+      sections.push({
+        id: `frp-${i}`,
+        reportTitle: pages[i].reportTitle,
+        portfolioName: pages[i].portfolioName,
+        startIdx: i,
+        endIdx: i,
+        enabled: true,
+      });
+      lastKey = key;
+    } else {
+      sections[sections.length - 1].endIdx = i;
+    }
+  }
+  return sections;
+}
+
 /**
  * Extracts per-page header info from an FRP PDF for use in the TOC.
  *
