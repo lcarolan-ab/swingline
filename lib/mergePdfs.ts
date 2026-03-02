@@ -1,4 +1,4 @@
-import { PDFDocument, PDFFont, PDFPage, rgb, StandardFonts } from "pdf-lib";
+import { PDFDocument, PDFFont, rgb, StandardFonts } from "pdf-lib";
 import { AGGREGATE_REPORTS } from "@/lib/extractFrpSections";
 import type { FrpPageInfo } from "@/lib/extractFrpSections";
 
@@ -76,12 +76,16 @@ export async function buildPerformanceBook(
   coverIndex: number,
   metadata: BookMetadata,
   frpData?: Map<number, SectionFrpData>,
+  logoBytes?: Uint8Array,
 ): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
 
   const fontBold    = await doc.embedFont(StandardFonts.HelveticaBold);
   const fontRegular = await doc.embedFont(StandardFonts.Helvetica);
   const fontOblique = await doc.embedFont(StandardFonts.HelveticaOblique);
+
+  // Embed logo PNG if provided
+  const logoImage = logoBytes ? await doc.embedPng(logoBytes) : null;
 
   // ── load all PDFs ──────────────────────────────────────────────────────────
   const pdfs = await Promise.all(
@@ -186,22 +190,45 @@ export async function buildPerformanceBook(
     }
   }
 
-  // 4. Stamp page numbers bottom-right on content pages.
-  //    Cover (index 0) and TOC pages (indices 1…numTocPages) get no number.
-  const firstContentIdx = 1 + numTocPages;
+  // 4. Stamp footer on all pages except the cover (index 0).
+  //    Footer layout: [Logo far-left] ... [ArchBridge Family Office  PageNum]
   const totalPages = doc.getPageCount();
-  const GRAY = rgb(0.55, 0.55, 0.55);
-  for (let i = firstContentIdx; i < totalPages; i++) {
-    const pg      = doc.getPage(i);
+  for (let i = 1; i < totalPages; i++) {
+    const pg = doc.getPage(i);
     const { width } = pg.getSize();
-    const numStr  = String(i + 1);          // page 3, 4, 5 …
-    const numW    = fontRegular.widthOfTextAtSize(numStr, 9);
-    pg.drawText(numStr, {
+    const pageNum = String(i + 1);
+
+    // Logo on far left
+    if (logoImage) {
+      const logoH = 18;
+      const logoW = (logoImage.width / logoImage.height) * logoH;
+      pg.drawImage(logoImage, {
+        x: MARGIN,
+        y: 14,
+        width: logoW,
+        height: logoH,
+      });
+    }
+
+    // Page number (bold navy, right-aligned)
+    const numW = fontBold.widthOfTextAtSize(pageNum, 9);
+    pg.drawText(pageNum, {
       x: width - MARGIN - numW,
       y: 18,
       size: 9,
-      font: fontRegular,
-      color: GRAY,
+      font: fontBold,
+      color: NAVY,
+    });
+
+    // "ArchBridge Family Office" to the left of the page number
+    const label = "ArchBridge Family Office";
+    const labelW = fontBold.widthOfTextAtSize(label, 8);
+    pg.drawText(label, {
+      x: width - MARGIN - numW - 10 - labelW,
+      y: 18,
+      size: 8,
+      font: fontBold,
+      color: NAVY,
     });
   }
 
@@ -271,13 +298,6 @@ function buildTocPages(
       entryIdx++;
     }
 
-    // ── logo (every TOC page) ─────────────────────────────────────────────
-    drawWaveMark(page, MARGIN, 30, BLUE);
-    page.drawText("ArchBridge Family Office", {
-      x: MARGIN + 28, y: 32,
-      size: 8, font: fontBold, color: BLUE,
-    });
-
     pageNum++;
   }
 
@@ -292,11 +312,6 @@ function buildTocPages(
       x: MARGIN, y: PAGE_H - 98,
       size: 13, font: fontOblique, color: BLUE,
     });
-    drawWaveMark(page, MARGIN, 30, BLUE);
-    page.drawText("ArchBridge Family Office", {
-      x: MARGIN + 28, y: 32,
-      size: 8, font: fontBold, color: BLUE,
-    });
   }
 }
 
@@ -310,23 +325,3 @@ function truncateText(text: string, font: PDFFont, size: number, maxWidth: numbe
   return t + "…";
 }
 
-/**
- * Draws a simplified version of the ArchBridge wave mark using three bezier arcs.
- * Each arc bows upward; arcs are stacked and shrink toward the top.
- */
-function drawWaveMark(page: PDFPage, x: number, y: number, color: ReturnType<typeof rgb>) {
-  const arcs: [number, number, number][] = [
-    [0,   20, 6],  // bottom — widest
-    [2,   16, 5],  // middle
-    [4,   12, 4],  // top    — narrowest
-  ];
-
-  arcs.forEach(([ox, w, h], i) => {
-    const sy = y + i * 6;
-    const sx = x + ox;
-    const path =
-      `M ${sx} ${sy} ` +
-      `C ${sx + w * 0.25} ${sy + h}, ${sx + w * 0.75} ${sy + h}, ${sx + w} ${sy}`;
-    page.drawSvgPath(path, { x: 0, y: 0, borderColor: color, borderWidth: 1.5 });
-  });
-}

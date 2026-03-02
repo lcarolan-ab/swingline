@@ -236,11 +236,16 @@ export default function PdfMerger() {
         frpData.set(i, { pageInfo, includedPages });
       }
 
+      // Fetch the logo PNG for embedding in the PDF footer
+      const logoRes = await fetch("/ARCH_ID_2C.png");
+      const logoBytes = new Uint8Array(await logoRes.arrayBuffer());
+
       const bytes = await buildPerformanceBook(
         pdfFiles.map((f) => ({ file: f.file, name: f.sectionName })),
         coverIndex,
         { clientName: clientName.trim(), periodDate: formatPeriodDate(periodDateRaw) },
         frpData.size > 0 ? frpData : undefined,
+        logoBytes,
       );
       const buf  = new ArrayBuffer(bytes.byteLength);
       new Uint8Array(buf).set(bytes);
