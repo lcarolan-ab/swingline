@@ -1,4 +1,5 @@
 import { PDFDocument, PDFFont, PDFPage, rgb, StandardFonts } from "pdf-lib";
+import { AGGREGATE_REPORTS } from "@/lib/extractFrpSections";
 import type { FrpPageInfo } from "@/lib/extractFrpSections";
 
 export interface Section {
@@ -40,16 +41,6 @@ const COL_SECTION   = MARGIN;
 const COL_REPORT    = MARGIN + 90;
 const COL_PORTFOLIO = MARGIN + 340;
 const COL_PAGE_R    = PAGE_W - MARGIN; // right-edge for right-aligned page numbers
-
-// Report titles that represent the whole book, not a sub-portfolio.
-// For these, the Portfolio column should show the overall client name.
-const AGGREGATE_REPORTS = new Set([
-  "Disclosures",
-  "Aggregate Portfolio Summary",
-  "Aggregate Portfolio Performance",
-  "Summary of Net Assets",
-  "Glossary",
-]);
 
 /**
  * Build the performance book.
@@ -97,7 +88,9 @@ export async function buildPerformanceBook(
       for (let pi = startIdx; pi < data.pageInfo.length; pi++) {
         if (!data.includedPages.has(pi)) continue;
         const info = data.pageInfo[pi];
-        const key = `${info.reportTitle}|${info.portfolioName}`;
+        const key = AGGREGATE_REPORTS.has(info.reportTitle)
+          ? info.reportTitle
+          : `${info.reportTitle}|${info.portfolioName}`;
         if (key !== lastKey) {
           const portfolioName = AGGREGATE_REPORTS.has(info.reportTitle)
             ? sections[i].name
