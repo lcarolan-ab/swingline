@@ -203,7 +203,7 @@ export async function buildPerformanceBook(
       const logoH = 18;
       const logoW = (logoImage.width / logoImage.height) * logoH;
       pg.drawImage(logoImage, {
-        x: MARGIN,
+        x: 18,
         y: 14,
         width: logoW,
         height: logoH,
