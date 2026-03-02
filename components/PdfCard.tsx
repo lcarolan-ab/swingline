@@ -1,19 +1,31 @@
 "use client";
 
+import { useState } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import type { PdfFile } from "@/components/PdfMerger";
+import type { FrpSection } from "@/lib/extractFrpSections";
 
 interface Props {
   pdf: PdfFile;
   index: number;
   isCover: boolean;
+  sections: FrpSection[];
+  isExtracting: boolean;
   onRemove: (id: string) => void;
   onRename: (id: string, name: string) => void;
   onSetCover: (id: string) => void;
+  onToggleSection: (sectionId: string) => void;
 }
 
-export default function PdfCard({ pdf, index, isCover, onRemove, onRename, onSetCover }: Props) {
+export default function PdfCard({
+  pdf, index, isCover, sections, isExtracting,
+  onRemove, onRename, onSetCover, onToggleSection,
+}: Props) {
+  const [expanded, setExpanded] = useState(false);
+  const hasSections = sections.length > 1;
+  const enabledCount = sections.filter((s) => s.enabled).length;
+
   const {
     attributes,
     listeners,
@@ -29,7 +41,9 @@ export default function PdfCard({ pdf, index, isCover, onRemove, onRename, onSet
     <div
       ref={setNodeRef}
       style={style}
-      className={`group relative flex flex-col rounded-xl border bg-white aspect-[3/4] overflow-hidden select-none transition-all ${
+      className={`group relative flex flex-col rounded-xl border bg-white overflow-hidden select-none transition-all ${
+        !hasSections || !expanded ? "aspect-[3/4]" : ""
+      } ${
         isDragging
           ? "shadow-2xl border-blue-400 opacity-75 ring-2 ring-blue-300"
           : isCover
@@ -62,7 +76,7 @@ export default function PdfCard({ pdf, index, isCover, onRemove, onRename, onSet
 
       {/* Drag area */}
       <div
-        className="flex-1 flex flex-col items-center justify-center gap-2 cursor-grab active:cursor-grabbing"
+        className="flex-1 flex flex-col items-center justify-center gap-2 cursor-grab active:cursor-grabbing min-h-0"
         {...attributes}
         {...listeners}
       >
@@ -83,6 +97,74 @@ export default function PdfCard({ pdf, index, isCover, onRemove, onRename, onSet
           {isCover ? "Cover source" : "Set as cover"}
         </button>
       </div>
+
+      {/* Section toggle — shown when extraction found 2+ groups */}
+      {(hasSections || isExtracting) && (
+        <div className="px-2" onPointerDown={(e) => e.stopPropagation()}>
+          {isExtracting ? (
+            <div className="flex items-center gap-1.5 py-1 text-[10px] text-stone-400">
+              <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+              </svg>
+              Reading sections…
+            </div>
+          ) : (
+            <>
+              <button
+                onClick={() => setExpanded((v) => !v)}
+                className="flex items-center gap-1 w-full py-1 text-[10px] font-medium text-stone-500 hover:text-blue-600 transition-colors"
+              >
+                <svg
+                  className={`w-3 h-3 transition-transform ${expanded ? "rotate-90" : ""}`}
+                  fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
+                </svg>
+                {enabledCount}/{sections.length} sections
+              </button>
+
+              {expanded && (
+                <ul className="max-h-48 overflow-y-auto mb-1 -mx-0.5 px-0.5 space-y-px">
+                  {sections.map((section) => {
+                    const pageCount = section.endIdx - section.startIdx + 1;
+                    return (
+                      <li key={section.id} className="flex items-start gap-1.5 py-0.5">
+                        <button
+                          onClick={() => onToggleSection(section.id)}
+                          className={`flex-shrink-0 mt-0.5 w-3.5 h-3.5 rounded border flex items-center justify-center transition-colors ${
+                            section.enabled
+                              ? "bg-blue-600 border-blue-600"
+                              : "bg-white border-stone-300 hover:border-stone-400"
+                          }`}
+                          aria-label={section.enabled ? "Exclude section" : "Include section"}
+                        >
+                          {section.enabled && (
+                            <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                            </svg>
+                          )}
+                        </button>
+                        <div className={`min-w-0 ${section.enabled ? "" : "opacity-40"}`}>
+                          <p className="text-[10px] leading-tight font-medium text-stone-700 truncate">
+                            {section.reportTitle}
+                          </p>
+                          <p className="text-[9px] leading-tight text-stone-400 truncate">
+                            {section.portfolioName}
+                            <span className="ml-1 text-stone-300">
+                              · {pageCount}p
+                            </span>
+                          </p>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </>
+          )}
+        </div>
+      )}
 
       {/* Footer */}
       <div className="px-2 pb-2 pt-1" onPointerDown={(e) => e.stopPropagation()}>

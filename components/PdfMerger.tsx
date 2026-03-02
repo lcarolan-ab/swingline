@@ -17,10 +17,10 @@ import {
   rectSortingStrategy,
 } from "@dnd-kit/sortable";
 import { buildPerformanceBook } from "@/lib/mergePdfs";
+import type { SectionFrpData } from "@/lib/mergePdfs";
 import { extractFrpPageInfo, groupFrpSections } from "@/lib/extractFrpSections";
 import type { FrpPageInfo, FrpSection } from "@/lib/extractFrpSections";
 import PdfCard from "@/components/PdfCard";
-import FrpSectionPanel from "@/components/FrpSectionPanel";
 
 export interface PdfFile {
   id: string;
@@ -36,12 +36,13 @@ export default function PdfMerger() {
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [isBuilding, setIsBuilding]   = useState(false);
   const [error, setError]             = useState<string | null>(null);
-  const [frpPageInfo, setFrpPageInfo]     = useState<FrpPageInfo[] | null>(null);
-  const [frpSections, setFrpSections]     = useState<FrpSection[]>([]);
-  const [isExtracting, setIsExtracting]   = useState(false);
-  const fileInputRef    = useRef<HTMLInputElement>(null);
-  const pdfFilesRef     = useRef(pdfFiles);
-  pdfFilesRef.current   = pdfFiles;
+
+  // ── per-PDF extraction state ──────────────────────────────────────────────
+  const [extractions, setExtractions] = useState<Record<string, FrpPageInfo[]>>({});
+  const [sectionsByPdf, setSectionsByPdf] = useState<Record<string, FrpSection[]>>({});
+  const [extractingIds, setExtractingIds] = useState<Set<string>>(new Set());
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -69,7 +70,53 @@ export default function PdfMerger() {
       if (!coverId) setCoverId(newFiles[0].id);
       return next;
     });
+
+    // Kick off extraction for each new file
+    for (const pf of newFiles) {
+      setExtractingIds((prev) => new Set(prev).add(pf.id));
+      extractFrpPageInfo(pf.file)
+        .then((info) => {
+          setExtractions((prev) => ({ ...prev, [pf.id]: info }));
+        })
+        .catch(() => {
+          // Extraction failed — leave empty (treated as non-FRP)
+        })
+        .finally(() => {
+          setExtractingIds((prev) => {
+            const next = new Set(prev);
+            next.delete(pf.id);
+            return next;
+          });
+        });
+    }
   }, [coverId]);
+
+  // ── re-derive sections when extractions or coverId changes ────────────────
+  useEffect(() => {
+    setSectionsByPdf((prev) => {
+      const next: Record<string, FrpSection[]> = {};
+      for (const [id, info] of Object.entries(extractions)) {
+        const isCover  = id === coverId;
+        const startIdx = isCover ? 1 : 0;
+        const newSections = groupFrpSections(info, startIdx);
+
+        // Preserve enabled/disabled state from previous render
+        const prevSections = prev[id];
+        if (prevSections) {
+          const stateMap = new Map(
+            prevSections.map((s) => [`${s.reportTitle}|${s.portfolioName}`, s.enabled]),
+          );
+          for (const s of newSections) {
+            const prevEnabled = stateMap.get(`${s.reportTitle}|${s.portfolioName}`);
+            if (prevEnabled !== undefined) s.enabled = prevEnabled;
+          }
+        }
+
+        next[id] = newSections;
+      }
+      return next;
+    });
+  }, [extractions, coverId]);
 
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) { addFiles(e.target.files); e.target.value = ""; }
@@ -97,10 +144,12 @@ export default function PdfMerger() {
   const removeFile = (id: string) => {
     setPdfFiles((prev) => {
       const next = prev.filter((f) => f.id !== id);
-      // re-assign cover if the cover card was removed
       if (id === coverId) setCoverId(next[0]?.id ?? null);
       return next;
     });
+    // Clean up extraction data
+    setExtractions((prev) => { const { [id]: _, ...rest } = prev; return rest; });
+    setSectionsByPdf((prev) => { const { [id]: _, ...rest } = prev; return rest; });
   };
 
   const renameSection = (id: string, name: string) => {
@@ -109,39 +158,13 @@ export default function PdfMerger() {
 
   const handleSetCover = (id: string) => setCoverId(id);
 
-  // ── extract FRP sections when cover changes ─────────────────────────────────
-  useEffect(() => {
-    if (!coverId) {
-      setFrpPageInfo(null);
-      setFrpSections([]);
-      return;
-    }
-    const coverFile = pdfFilesRef.current.find((f) => f.id === coverId);
-    if (!coverFile) return;
-
-    let cancelled = false;
-    setIsExtracting(true);
-    setFrpPageInfo(null);
-    setFrpSections([]);
-
-    extractFrpPageInfo(coverFile.file)
-      .then((info) => {
-        if (cancelled) return;
-        setFrpPageInfo(info);
-        setFrpSections(groupFrpSections(info));
-      })
-      .catch(() => {
-        if (!cancelled) setError("Failed to read FRP report sections.");
-      })
-      .finally(() => {
-        if (!cancelled) setIsExtracting(false);
-      });
-
-    return () => { cancelled = true; };
-  }, [coverId]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const toggleFrpSection = (id: string) => {
-    setFrpSections((prev) => prev.map((s) => s.id === id ? { ...s, enabled: !s.enabled } : s));
+  const toggleSection = (pdfId: string, sectionId: string) => {
+    setSectionsByPdf((prev) => ({
+      ...prev,
+      [pdfId]: (prev[pdfId] ?? []).map((s) =>
+        s.id === sectionId ? { ...s, enabled: !s.enabled } : s,
+      ),
+    }));
   };
 
   /** Converts "YYYY-MM-DD" → "December 31, 2025" */
@@ -153,7 +176,13 @@ export default function PdfMerger() {
     });
   };
 
-  const handleClear = () => { setPdfFiles([]); setCoverId(null); setError(null); setFrpPageInfo(null); setFrpSections([]); };
+  const handleClear = () => {
+    setPdfFiles([]);
+    setCoverId(null);
+    setError(null);
+    setExtractions({});
+    setSectionsByPdf({});
+  };
 
   // ── build ──────────────────────────────────────────────────────────────────
   const handleBuild = async () => {
@@ -166,22 +195,28 @@ export default function PdfMerger() {
     setIsBuilding(true);
     setError(null);
     try {
-      // Build the set of included FRP page indices from the section toggles.
-      let includedPages: Set<number> | undefined;
-      if (frpPageInfo && frpSections.length > 0) {
-        includedPages = new Set<number>();
-        for (const s of frpSections) {
+      // Build the per-section FRP data map from extraction + section toggles.
+      const frpData = new Map<number, SectionFrpData>();
+
+      for (let i = 0; i < pdfFiles.length; i++) {
+        const id       = pdfFiles[i].id;
+        const pageInfo = extractions[id];
+        const sections = sectionsByPdf[id];
+        if (!pageInfo || !sections || sections.length === 0) continue;
+
+        const includedPages = new Set<number>();
+        for (const s of sections) {
           if (!s.enabled) continue;
           for (let idx = s.startIdx; idx <= s.endIdx; idx++) includedPages.add(idx);
         }
+        frpData.set(i, { pageInfo, includedPages });
       }
 
       const bytes = await buildPerformanceBook(
         pdfFiles.map((f) => ({ file: f.file, name: f.sectionName })),
         coverIndex,
         { clientName: clientName.trim(), periodDate: formatPeriodDate(periodDateRaw) },
-        frpPageInfo ?? undefined,
-        includedPages,
+        frpData.size > 0 ? frpData : undefined,
       );
       const buf  = new ArrayBuffer(bytes.byteLength);
       new Uint8Array(buf).set(bytes);
@@ -345,9 +380,12 @@ export default function PdfMerger() {
                   pdf={pdf}
                   index={index}
                   isCover={pdf.id === coverId}
+                  sections={sectionsByPdf[pdf.id] ?? []}
+                  isExtracting={extractingIds.has(pdf.id)}
                   onRemove={removeFile}
                   onRename={renameSection}
                   onSetCover={handleSetCover}
+                  onToggleSection={(sectionId) => toggleSection(pdf.id, sectionId)}
                 />
               ))}
 
@@ -364,15 +402,6 @@ export default function PdfMerger() {
             </div>
           </SortableContext>
         </DndContext>
-      )}
-
-      {/* FRP section breakout — shown once a cover is set and sections are extracted */}
-      {(isExtracting || frpSections.length > 0) && (
-        <FrpSectionPanel
-          sections={frpSections}
-          isExtracting={isExtracting}
-          onToggle={toggleFrpSection}
-        />
       )}
     </div>
   );

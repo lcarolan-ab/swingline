@@ -11,6 +11,14 @@ export interface BookMetadata {
   periodDate: string; // e.g. "December 31, 2025"
 }
 
+/** Per-section FRP extraction data passed to the book builder. */
+export interface SectionFrpData {
+  /** Full page-info array (index 0 = PDF page 1). */
+  pageInfo: FrpPageInfo[];
+  /** Indices into `pageInfo` for pages the user wants included. */
+  includedPages: Set<number>;
+}
+
 interface TocEntry {
   reportTitle: string;
   portfolioName: string;
@@ -52,20 +60,16 @@ const AGGREGATE_REPORTS = new Set([
  *   Pages 3… — all sections in display order; the cover section contributes
  *               only its pages 2… (page 1 was used as the cover above)
  *
- * When `frpPageInfo` is supplied the cover section's TOC row expands into one
- * row per content page, each showing the extracted report title and portfolio
- * name from that page's header.
- *
- * `frpIncludedPages` is an optional set of 0-based indices into the
- * `frpPageInfo` array.  When provided, only those FRP pages are included in
- * the output (both TOC and content).  If omitted every page is included.
+ * `frpData` is an optional map keyed by section index.  For each section that
+ * has FRP extraction data the TOC expands into one row per unique
+ * (reportTitle, portfolioName) run, and only the pages in `includedPages` are
+ * copied into the output.
  */
 export async function buildPerformanceBook(
   sections: Section[],
   coverIndex: number,
   metadata: BookMetadata,
-  frpPageInfo?: FrpPageInfo[],
-  frpIncludedPages?: Set<number>,
+  frpData?: Map<number, SectionFrpData>,
 ): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
 
@@ -80,19 +84,19 @@ export async function buildPerformanceBook(
 
   // ── calculate TOC entries (sections in display order) ─────────────────────
   // Page 1 = cover, Page 2 = TOC, Page 3+ = section content in display order.
-  // The cover section contributes (N-1) content pages; all others contribute N.
   const tocEntries: TocEntry[] = [];
   let curPage = 3;
 
   for (let i = 0; i < sections.length; i++) {
-    if (i === coverIndex && frpPageInfo && frpPageInfo.length > 0) {
-      // One TOC row per unique (reportTitle, portfolioName) run; the page
-      // number points to the first page where that combination appears.
-      // curPage still advances for every *included* physical page.
+    const data = frpData?.get(i);
+    if (data && data.pageInfo.length > 0) {
+      // FRP section — one TOC row per unique (reportTitle, portfolioName) run.
+      // For the cover PDF, skip index 0 (that page is the book cover).
+      const startIdx = i === coverIndex ? 1 : 0;
       let lastKey = "";
-      for (let pi = 0; pi < frpPageInfo.length; pi++) {
-        if (frpIncludedPages && !frpIncludedPages.has(pi)) continue;
-        const info = frpPageInfo[pi];
+      for (let pi = startIdx; pi < data.pageInfo.length; pi++) {
+        if (!data.includedPages.has(pi)) continue;
+        const info = data.pageInfo[pi];
         const key = `${info.reportTitle}|${info.portfolioName}`;
         if (key !== lastKey) {
           const portfolioName = AGGREGATE_REPORTS.has(info.reportTitle)
@@ -108,9 +112,10 @@ export async function buildPerformanceBook(
         curPage++;
       }
     } else {
+      // Plain section — one TOC row.
       const contentPages =
         i === coverIndex
-          ? Math.max(0, pdfs[i].getPageCount() - 1) // page 1 extracted as cover
+          ? Math.max(0, pdfs[i].getPageCount() - 1)
           : pdfs[i].getPageCount();
       tocEntries.push({
         reportTitle:   sections[i].name,
@@ -131,18 +136,38 @@ export async function buildPerformanceBook(
 
   // 3. Section content in display order
   for (let i = 0; i < sections.length; i++) {
-    const pdf = pdfs[i];
+    const pdf  = pdfs[i];
+    const data = frpData?.get(i);
+
     if (i === coverIndex) {
-      // Skip page 1 — it's already the cover.
-      // When frpIncludedPages is provided, only copy the included pages.
+      // Cover section: page 0 is the cover (already added above).
       if (pdf.getPageCount() > 1) {
-        const allIndices = Array.from({ length: pdf.getPageCount() - 1 }, (_, j) => j + 1);
-        const indices = frpIncludedPages
-          ? allIndices.filter((_, j) => frpIncludedPages.has(j))
-          : allIndices;
+        if (data) {
+          // Copy only included pages, skipping page 0.
+          const indices: number[] = [];
+          for (let pi = 1; pi < data.pageInfo.length; pi++) {
+            if (data.includedPages.has(pi)) indices.push(pi);
+          }
+          if (indices.length > 0) {
+            for (const p of await doc.copyPages(pdf, indices)) doc.addPage(p);
+          }
+        } else {
+          // No FRP data — copy all pages except page 0.
+          const indices = Array.from({ length: pdf.getPageCount() - 1 }, (_, j) => j + 1);
+          for (const p of await doc.copyPages(pdf, indices)) doc.addPage(p);
+        }
+      }
+    } else if (data) {
+      // Non-cover FRP section: copy only included pages.
+      const indices: number[] = [];
+      for (let pi = 0; pi < data.pageInfo.length; pi++) {
+        if (data.includedPages.has(pi)) indices.push(pi);
+      }
+      if (indices.length > 0) {
         for (const p of await doc.copyPages(pdf, indices)) doc.addPage(p);
       }
     } else {
+      // Plain section: copy all pages.
       for (const p of await doc.copyPages(pdf, pdf.getPageIndices())) doc.addPage(p);
     }
   }
