@@ -50,17 +50,20 @@ export default function PdfMerger() {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
+  /** Auto-detect FRP by original upload filename. */
+  const isFrpFilename = (name: string) =>
+    /aggregate\s+portfolio\s+report/i.test(name);
+
   // ── file management ────────────────────────────────────────────────────────
   const addFiles = useCallback((files: FileList | File[]) => {
     const isFirstUpload = !coverId;
     const newFiles: PdfFile[] = Array.from(files)
       .filter((f) => f.type === "application/pdf")
-      .map((file, i) => ({
+      .map((file) => ({
         id: `${file.name}-${Date.now()}-${Math.random()}`,
         file,
         sectionName: file.name.replace(/\.pdf$/i, ""),
-        // Auto-mark the very first file as FRP (it also becomes the cover)
-        isFrp: isFirstUpload && i === 0,
+        isFrp: isFrpFilename(file.name),
       }));
 
     if (newFiles.length === 0) {
@@ -74,7 +77,7 @@ export default function PdfMerger() {
       return next;
     });
 
-    // Only extract for files marked as FRP on creation (i.e. the auto-cover)
+    // Kick off extraction for any file auto-detected as FRP
     for (const pf of newFiles) {
       if (pf.isFrp) startExtraction(pf);
     }
@@ -166,13 +169,7 @@ export default function PdfMerger() {
     setPdfFiles((prev) => prev.map((f) => f.id === id ? { ...f, sectionName: name } : f));
   };
 
-  const handleSetCover = (id: string) => {
-    setCoverId(id);
-    // Setting as cover implies FRP — mark it and kick off extraction
-    setPdfFiles((prev) => prev.map((f) => f.id === id ? { ...f, isFrp: true } : f));
-    const pf = pdfFiles.find((f) => f.id === id);
-    if (pf) startExtraction(pf);
-  };
+  const handleSetCover = (id: string) => setCoverId(id);
 
   const handleToggleFrp = (id: string) => {
     setPdfFiles((prev) => {

@@ -20,10 +20,26 @@ export interface FrpSection {
 }
 
 /**
+ * Report titles that represent the whole book rather than a specific
+ * sub-portfolio.  Used both for TOC display (portfolio column shows the
+ * file name) and for section grouping (portfolioName is ignored so
+ * consecutive pages aren't split).
+ */
+export const AGGREGATE_REPORTS = new Set([
+  "Disclosures",
+  "Aggregate Portfolio Summary",
+  "Aggregate Portfolio Performance",
+  "Summary of Net Assets",
+  "Glossary",
+]);
+
+/**
  * Groups a flat FrpPageInfo[] into consecutive sections.
  *
  * Consecutive pages with the same (reportTitle, portfolioName) key are merged
  * into a single FrpSection so the user can toggle whole sections on or off.
+ * For aggregate report titles (Glossary, Disclosures, etc.) the portfolioName
+ * is ignored when building the grouping key so they aren't split.
  *
  * `startIdx` lets callers skip leading pages (e.g. pass 1 for a cover PDF so
  * the cover page isn't included in the toggleable sections).  Indices stored
@@ -34,7 +50,10 @@ export function groupFrpSections(pages: FrpPageInfo[], startIdx = 0): FrpSection
   const sections: FrpSection[] = [];
   let lastKey = "";
   for (let i = startIdx; i < pages.length; i++) {
-    const key = `${pages[i].reportTitle}|${pages[i].portfolioName}`;
+    const title = pages[i].reportTitle;
+    const key = AGGREGATE_REPORTS.has(title)
+      ? title
+      : `${title}|${pages[i].portfolioName}`;
     if (key !== lastKey) {
       sections.push({
         id: `frp-${i}`,
