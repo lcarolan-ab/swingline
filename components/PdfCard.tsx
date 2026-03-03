@@ -60,7 +60,7 @@ export default function PdfCard({
 
       {/* Cover badge */}
       {isCover && (
-        <div className="absolute top-2 left-10 z-10 px-1.5 py-0.5 rounded bg-blue-600 text-white text-[9px] font-bold uppercase tracking-wide shadow">
+        <div className="absolute top-10 left-2 z-10 px-1.5 py-0.5 rounded bg-blue-600 text-white text-[9px] font-bold uppercase tracking-wide shadow">
           Cover
         </div>
       )}
