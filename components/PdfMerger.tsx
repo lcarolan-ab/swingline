@@ -21,6 +21,7 @@ import type { SectionFrpData } from "@/lib/mergePdfs";
 import { extractFrpPageInfo, groupFrpSections } from "@/lib/extractFrpSections";
 import type { FrpPageInfo, FrpSection } from "@/lib/extractFrpSections";
 import PdfCard from "@/components/PdfCard";
+import ConfigManager from "@/components/ConfigManager";
 
 export interface PdfFile {
   id: string;
@@ -42,6 +43,11 @@ export default function PdfMerger() {
   const [extractions, setExtractions] = useState<Record<string, FrpPageInfo[]>>({});
   const [sectionsByPdf, setSectionsByPdf] = useState<Record<string, FrpSection[]>>({});
   const [extractingIds, setExtractingIds] = useState<Set<string>>(new Set());
+
+  // ── saved-config tracking ─────────────────────────────────────────────────
+  const [currentConfigId, setCurrentConfigId] = useState<string | null>(null);
+  const [currentConfigName, setCurrentConfigName] = useState<string | null>(null);
+  const pendingOverridesRef = useRef<Record<string, Array<{ sectionId: string; enabled: boolean }>> | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -131,6 +137,48 @@ export default function PdfMerger() {
     });
   }, [extractions, coverId, frpIds.join(",")]);
 
+  // ── apply section overrides after a config load ──────────────────────────
+  useEffect(() => {
+    if (!pendingOverridesRef.current) return;
+    const overrides = pendingOverridesRef.current;
+    // Only apply once sectionsByPdf has entries for the loaded FRP files
+    const overrideKeys = Object.keys(overrides);
+    if (overrideKeys.length > 0 && overrideKeys.every((k) => sectionsByPdf[k])) {
+      pendingOverridesRef.current = null;
+      setSectionsByPdf((prev) => {
+        const next = { ...prev };
+        for (const [pdfId, sectionOverrides] of Object.entries(overrides)) {
+          if (!next[pdfId]) continue;
+          const overrideMap = new Map(sectionOverrides.map((o) => [o.sectionId, o.enabled]));
+          next[pdfId] = next[pdfId].map((s) => {
+            const enabled = overrideMap.get(s.id);
+            return enabled !== undefined ? { ...s, enabled } : s;
+          });
+        }
+        return next;
+      });
+    }
+  }, [sectionsByPdf]);
+
+  // ── restore from a saved config ─────────────────────────────────────────
+  const handleRestoreConfig = useCallback((state: {
+    pdfFiles: PdfFile[];
+    coverId: string | null;
+    clientName: string;
+    periodDateRaw: string;
+    extractions: Record<string, FrpPageInfo[]>;
+    sectionOverrides: Record<string, Array<{ sectionId: string; enabled: boolean }>>;
+  }) => {
+    setPdfFiles(state.pdfFiles);
+    setCoverId(state.coverId);
+    setClientName(state.clientName);
+    setPeriodDateRaw(state.periodDateRaw);
+    setExtractions(state.extractions);
+    setError(null);
+    // Section overrides will be applied once sectionsByPdf re-derives
+    pendingOverridesRef.current = state.sectionOverrides;
+  }, []);
+
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) { addFiles(e.target.files); e.target.value = ""; }
   };
@@ -205,6 +253,8 @@ export default function PdfMerger() {
     setError(null);
     setExtractions({});
     setSectionsByPdf({});
+    setCurrentConfigId(null);
+    setCurrentConfigName(null);
   };
 
   // ── build ──────────────────────────────────────────────────────────────────
@@ -324,6 +374,18 @@ export default function PdfMerger() {
         </div>
 
         <div className="flex items-center gap-2">
+          <ConfigManager
+            pdfFiles={pdfFiles}
+            coverId={coverId}
+            clientName={clientName}
+            periodDateRaw={periodDateRaw}
+            extractions={extractions}
+            sectionsByPdf={sectionsByPdf}
+            currentConfigId={currentConfigId}
+            currentConfigName={currentConfigName}
+            onRestore={handleRestoreConfig}
+            onConfigChange={(id, name) => { setCurrentConfigId(id); setCurrentConfigName(name); }}
+          />
           {hasFiles && (
             <button
               onClick={handleClear}
@@ -356,6 +418,13 @@ export default function PdfMerger() {
           </button>
         </div>
       </div>
+
+      {/* Active config indicator */}
+      {currentConfigName && (
+        <p className="mb-3 text-xs text-stone-400">
+          Editing: &ldquo;{currentConfigName}&rdquo;
+        </p>
+      )}
 
       <input
         ref={fileInputRef}
