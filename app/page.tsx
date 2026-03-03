@@ -2,7 +2,7 @@ import PdfMerger from "@/components/PdfMerger";
 
 export default function Home() {
   return (
-    <div className="min-h-screen bg-[#f9f8f5]">
+    <div className="min-h-screen bg-[#ededee]">
       {/* Header / wordmark */}
       <header className="text-center pt-12 pb-8 px-4">
         <div className="inline-flex items-center gap-2.5 mb-2">
@@ -11,9 +11,6 @@ export default function Home() {
             Stapler
           </h1>
         </div>
-        <p className="text-stone-400 text-sm">
-          Combine multiple PDFs into one — upload, reorder, merge.
-        </p>
       </header>
 
       {/* Content panel */}
