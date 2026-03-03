@@ -101,7 +101,12 @@ export default function ConfigManager({
     setIsSaving(true);
     setError(null);
     try {
-      const id = overwriteId ?? currentConfigId ?? crypto.randomUUID();
+      // Only reuse currentConfigId when the name matches the current config
+      // (i.e. the user is updating it). Otherwise generate a new UUID so that
+      // saving with a new name creates a separate configuration.
+      const isUpdatingCurrent = currentConfigId != null && currentConfigName != null
+        && saveName.trim().toLowerCase() === currentConfigName.toLowerCase();
+      const id = overwriteId ?? (isUpdatingCurrent ? currentConfigId : null) ?? crypto.randomUUID();
       const now = Date.now();
 
       const sectionOverrides: SavedConfig["sectionOverrides"] = {};
