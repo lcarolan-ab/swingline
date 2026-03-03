@@ -58,13 +58,6 @@ export default function PdfCard({
         {index + 1}
       </div>
 
-      {/* Cover badge */}
-      {isCover && (
-        <div className="absolute top-10 left-2 z-10 w-5 h-5 rounded-full bg-blue-600 text-white text-[9px] font-bold flex items-center justify-center shadow">
-          C
-        </div>
-      )}
-
       {/* Remove button */}
       <button
         onClick={() => onRemove(pdf.id)}
