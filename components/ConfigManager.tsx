@@ -112,10 +112,13 @@ export default function ConfigManager({
         }));
       }
 
+      // Preserve the original creation timestamp when overwriting an existing config
+      const existingConfig = configs.find((c) => c.id === id);
+
       const config: SavedConfig = {
         id,
         name,
-        createdAt: overwriteId ? now : (currentConfigId === id ? now : now),
+        createdAt: existingConfig ? existingConfig.createdAt : now,
         updatedAt: now,
         clientName,
         periodDateRaw,

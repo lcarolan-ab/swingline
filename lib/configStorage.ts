@@ -33,6 +33,7 @@ interface SavedBlob {
 export interface ConfigSummary {
   id: string;
   name: string;
+  createdAt: number;
   updatedAt: number;
   fileCount: number;
 }
@@ -72,6 +73,15 @@ export async function saveConfig(
   config: SavedConfig,
   files: Array<{ id: string; file: File }>,
 ): Promise<void> {
+  // Read all file data BEFORE opening the IDB transaction.
+  // Awaiting file.arrayBuffer() inside an active transaction causes it to
+  // auto-commit (no pending IDB requests while the async read is in-flight),
+  // which makes subsequent puts fail with TransactionInactiveError.
+  const fileData: Array<{ id: string; data: ArrayBuffer; name: string; type: string }> = [];
+  for (const { id, file } of files) {
+    fileData.push({ id, data: await file.arrayBuffer(), name: file.name, type: file.type });
+  }
+
   const db = await openDB();
   const tx = db.transaction(["configs", "blobs"], "readwrite");
   const configStore = tx.objectStore("configs");
@@ -94,13 +104,13 @@ export async function saveConfig(
     blobCursor.onerror = () => reject(blobCursor.error);
   });
 
-  for (const { id, file } of files) {
-    const arrayBuffer = await file.arrayBuffer();
+  // Write new blobs synchronously within the transaction (no awaits).
+  for (const { id, data, name, type } of fileData) {
     const blob: SavedBlob = {
       key: `${config.id}/${id}`,
-      data: arrayBuffer,
-      name: file.name,
-      type: file.type,
+      data,
+      name,
+      type,
     };
     blobStore.put(blob);
   }
@@ -123,6 +133,7 @@ export async function listConfigs(): Promise<ConfigSummary[]> {
         .map((c) => ({
           id: c.id,
           name: c.name,
+          createdAt: c.createdAt,
           updatedAt: c.updatedAt,
           fileCount: c.files.length,
         }))
