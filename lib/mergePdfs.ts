@@ -27,8 +27,8 @@ interface TocEntry {
 }
 
 // ─── colours (matched to the ArchBridge TOC example) ───────────────────────
-const BLUE       = rgb(0.106, 0.431, 0.761);  // #1B6EC2 — titles / headers
-const NAVY       = rgb(0.118, 0.192, 0.337);  // #1E3156 — data rows (navy)
+const BLUE       = rgb(0,     0.514, 0.835);  // #0083d5 — titles / headers
+const NAVY       = rgb(0.090, 0.259, 0.455);  // #174274 — data rows (dark blue)
 const BLACK      = rgb(0,     0,     0);
 
 // ─── page dimensions (landscape letter, same as the source PDFs) ────────────

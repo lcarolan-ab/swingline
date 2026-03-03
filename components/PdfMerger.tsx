@@ -276,8 +276,8 @@ export default function PdfMerger() {
     >
       {/* Drop overlay */}
       {isDraggingOver && (
-        <div className="absolute inset-0 z-20 rounded-2xl border-2 border-blue-400 bg-blue-50/80 flex items-center justify-center pointer-events-none">
-          <p className="text-blue-600 font-semibold text-lg">Drop PDFs to add them</p>
+        <div className="absolute inset-0 z-20 rounded-2xl border-2 border-[#0083d5] bg-[#0083d5]/10 flex items-center justify-center pointer-events-none">
+          <p className="text-[#0083d5] font-semibold text-lg">Drop PDFs to add them</p>
         </div>
       )}
 
@@ -290,7 +290,7 @@ export default function PdfMerger() {
             value={clientName}
             onChange={(e) => setClientName(e.target.value)}
             placeholder="e.g. Nathan & Janet Davis"
-            className="px-3 py-2 rounded-lg border border-stone-200 text-sm text-stone-800 placeholder-stone-300 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:border-blue-400"
+            className="px-3 py-2 rounded-lg border border-stone-200 text-sm text-stone-800 placeholder-stone-300 focus:outline-none focus:ring-2 focus:ring-[#0083d5]/40 focus:border-[#0083d5]"
           />
         </div>
         <div className="flex flex-col gap-1">
@@ -299,7 +299,7 @@ export default function PdfMerger() {
             type="date"
             value={periodDateRaw}
             onChange={(e) => setPeriodDateRaw(e.target.value)}
-            className="px-3 py-2 rounded-lg border border-stone-200 text-sm text-stone-800 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:border-blue-400"
+            className="px-3 py-2 rounded-lg border border-stone-200 text-sm text-stone-800 focus:outline-none focus:ring-2 focus:ring-[#0083d5]/40 focus:border-[#0083d5]"
           />
         </div>
       </div>
@@ -335,7 +335,7 @@ export default function PdfMerger() {
           <button
             onClick={handleBuild}
             disabled={!canBuild || isBuilding}
-            className="flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-stone-200 disabled:text-stone-400 disabled:cursor-not-allowed transition-colors"
+            className="flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-semibold text-white bg-[#0083d5] hover:bg-[#174274] disabled:bg-stone-200 disabled:text-stone-400 disabled:cursor-not-allowed transition-colors"
           >
             {isBuilding ? (
               <>
@@ -423,7 +423,7 @@ export default function PdfMerger() {
               {/* Add more card */}
               <button
                 onClick={() => fileInputRef.current?.click()}
-                className="flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-stone-200 aspect-[3/4] text-stone-400 hover:border-blue-300 hover:text-blue-500 hover:bg-blue-50/40 transition-colors"
+                className="flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-stone-200 aspect-[3/4] text-stone-400 hover:border-[#0083d5] hover:text-[#0083d5] hover:bg-[#0083d5]/5 transition-colors"
               >
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
