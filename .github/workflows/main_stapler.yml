@@ -64,4 +64,5 @@ jobs:
           app-name: 'Stapler'
           slot-name: 'Production'
           package: .
+          clean: true
           
